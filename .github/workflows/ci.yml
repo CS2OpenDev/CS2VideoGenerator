@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'v*/**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  lint:
+    name: Lint (clang-format)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+
+      - name: Run clang-format
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: |
+          find src/ include/ -name '*.cpp' -o -name '*.h' \
+            | grep -v 'include/plugin/cdll_interfaces.h' \
+            | grep -v 'include/plugin/interface.h' \
+            | xargs clang-format-18 --dry-run --Werror
+
+  # The osx-arm64 mock_server is built on a maintainer's Mac and committed (CS2 has no
+  # macOS build, and a macOS runner is not worth its cost for a test fixture). This job
+  # is what makes that safe: a binary carrying the builder's home directory cannot be
+  # merged, regardless of how carefully whoever ran the refresh script was paying
+  # attention. See docs/build-path-privacy.md.
+  path-privacy:
+    name: Path privacy (committed prebuilts)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan committed native prebuilts
+        run: |
+          python3 .github/scripts/check-embedded-paths.py \
+            plugin/Cs2VideoGenerator.Plugin.Grpc/prebuilt
+
+  # Shared with release.yml (build-native-plugins.yml) so CI and releases build the
+  # plugins identically.
+  cpp-build:
+    name: Build C++ plugins
+    uses: ./.github/workflows/build-native-plugins.yml
+
+  dotnet:
+    name: Build & Test (.NET)
+    needs: [cpp-build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      # Native artifacts are arranged before `dotnet test` so integration tests that
+      # exercise the bundled mock server can run in CI. The action also hard-fails
+      # if any required native asset is missing.
+      - name: Set up native assets
+        uses: ./.github/actions/setup-native-assets
+
+      - name: Test
+        run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults/*.trx
+
+      - name: Pack NuGet
+        run: dotnet pack src/Cs2VideoGenerator.Core/Cs2VideoGenerator.Core.csproj --no-build -c Release -o artifacts/packages
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/packages/*.nupkg
+
+  # Windows is the product's primary platform: WindowsPlatformPathProvider and
+  # registry-based Steam discovery (WindowsSteamRegistryReader) only execute on
+  # Windows, so tests must run there too, not just on Linux.
+  dotnet-windows:
+    name: Test (.NET, Windows)
+    needs: [cpp-build]
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      # Native artifacts are arranged before `dotnet test` so integration tests that
+      # exercise the bundled mock server can run in CI.
+      - name: Set up native assets
+        uses: ./.github/actions/setup-native-assets
+
+      - name: Test
+        run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-windows
+          path: TestResults/*.trx

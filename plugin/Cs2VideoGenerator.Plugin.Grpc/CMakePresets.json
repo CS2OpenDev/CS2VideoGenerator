@@ -1,0 +1,218 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base-native",
+            "hidden": true,
+            "description": "Base configuration for native builds",
+            "toolchainFile": "${sourceDir}/external/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "binaryDir": "${sourceDir}/../../artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/${presetName}",
+            "installDir": "${sourceDir}/../../artifacts/install/Cs2VideoGenerator.Plugin.GRPC/${presetName}",
+            "environment": {
+                "VCPKG_ROOT": "${sourceDir}/external/vcpkg"
+            },
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+                "VCPKG_OVERLAY_PORTS": "${sourceDir}/cmake/ports"
+            }
+        },
+        {
+            "name": "base-windows-native",
+            "hidden": true,
+            "inherits": "base-native",
+            "description": "Base for native Windows builds",
+            "generator": "Visual Studio 17 2022",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "toolset": {
+                "value": "host=x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "base-unix-native",
+            "hidden": true,
+            "inherits": "base-native",
+            "description": "Base for native Unix builds (Linux/macOS)",
+            "generator": "Ninja",
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "base-cross",
+            "hidden": true,
+            "inherits": "base-native",
+            "description": "Base configuration for cross-compilation",
+            "generator": "Ninja"
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug (Native)",
+            "description": "Debug build for native platform",
+            "inherits": "base-windows-native",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release (Native)",
+            "description": "Release build for native platform",
+            "inherits": "base-windows-native",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "debug-unix",
+            "displayName": "Debug (Unix Native)",
+            "description": "Debug build for native Unix platform",
+            "inherits": "base-unix-native",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release-unix",
+            "displayName": "Release (Unix Native)",
+            "description": "Release build for native Unix platform",
+            "inherits": "base-unix-native",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "cross-linux-x64",
+            "displayName": "Cross-compile: Linux x64",
+            "description": "Cross-compile for Linux x86_64",
+            "inherits": "base-cross",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "x64-linux-static",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/linux-x64.cmake"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "cross-linux-arm64",
+            "displayName": "Cross-compile: Linux ARM64",
+            "description": "Cross-compile for Linux ARM64 (aarch64)",
+            "inherits": "base-cross",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "arm64-linux-static",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/linux-arm64.cmake"
+            }
+        },
+        {
+            "name": "cross-windows-x64",
+            "displayName": "Cross-compile: Windows x64",
+            "description": "Cross-compile for Windows x64 from Unix (requires xwin and clang)",
+            "inherits": "base-cross",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-clang-static",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/windows-x64.cmake",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
+                "VCPKG_APPLOCAL_DEPS": "OFF"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "cross-osx-arm64",
+            "displayName": "Cross-compile: macOS ARM64",
+            "description": "Cross-compile for macOS ARM64 (Apple Silicon, requires osxcross on Linux)",
+            "inherits": "base-cross",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-static",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/osx-arm64.cmake"
+            },
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "displayName": "Debug Build (Native)",
+            "description": "Build in debug mode on native platform",
+            "configurePreset": "debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "release",
+            "displayName": "Release Build (Native)",
+            "description": "Build in release mode on native platform",
+            "configurePreset": "release",
+            "configuration": "Release"
+        },
+        {
+            "name": "debug-unix",
+            "displayName": "Debug Build (Unix)",
+            "description": "Build in debug mode on Unix",
+            "configurePreset": "debug-unix"
+        },
+        {
+            "name": "release-unix",
+            "displayName": "Release Build (Unix)",
+            "description": "Build in release mode on Unix",
+            "configurePreset": "release-unix"
+        },
+        {
+            "name": "cross-linux-x64",
+            "displayName": "Cross-build: Linux x64",
+            "description": "Cross-compile for Linux x64",
+            "configurePreset": "cross-linux-x64"
+        },
+        {
+            "name": "cross-linux-arm64",
+            "displayName": "Cross-build: Linux ARM64",
+            "description": "Cross-compile for Linux ARM64",
+            "configurePreset": "cross-linux-arm64"
+        },
+        {
+            "name": "cross-windows-x64",
+            "displayName": "Cross-build: Windows x64",
+            "description": "Cross-compile for Windows x64",
+            "configurePreset": "cross-windows-x64"
+        },
+        {
+            "name": "cross-osx-arm64",
+            "displayName": "Cross-build: macOS ARM64",
+            "description": "Cross-compile for macOS ARM64",
+            "configurePreset": "cross-osx-arm64"
+        }
+    ]
+}

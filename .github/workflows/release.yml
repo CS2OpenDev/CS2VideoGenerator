@@ -1,0 +1,209 @@
+# Tag-triggered release: push a vX.Y.Z tag and this workflow builds the native plugins
+# (same reusable workflow as CI), gates on native-asset completeness, runs the test
+# suite, packs the NuGet packages, pushes them to this repo's GitHub Packages NuGet
+# feed (using the built-in GITHUB_TOKEN — no nuget.org key required), publishes
+# self-contained CLI archives, and creates a GitHub Release whose body is the CHANGELOG
+# section for that version, with the nupkg/snupkg + CLI archives attached.
+#
+# The full release process (including the version.json prerequisite this workflow
+# enforces) is documented in docs/RELEASING.md.
+#
+# workflow_dispatch is a dry run: it produces the complete artifact set (uploaded as a
+# workflow artifact) but skips the GitHub Packages push and the GitHub Release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  cpp-build:
+    name: Build C++ plugins
+    uses: ./.github/workflows/build-native-plugins.yml
+
+  release:
+    name: Test, pack & publish
+    needs: [cpp-build]
+    runs-on: ubuntu-latest
+    permissions:
+      # contents: create the GitHub Release. packages: push to the GitHub Packages
+      # NuGet feed with the built-in GITHUB_TOKEN. Everything else stays read-only.
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Nerdbank.GitVersioning needs full history to compute the version.
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Set up native assets
+        uses: ./.github/actions/setup-native-assets
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      # Linux-only test leg: the same commit must already be green on CI's
+      # ubuntu + windows matrix (ci.yml runs on every push to main); this run is a
+      # final gate that the exact release build with the release native assets passes.
+      - name: Test
+        run: dotnet test --no-build -c Release --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: TestResults/*.trx
+
+      # NBGV computes the version from the TAGGED COMMIT's version.json. Tagging alone
+      # does not produce a clean X.Y.Z: if version.json still carries a prerelease
+      # suffix (e.g. 1.0.1-alpha.{height}), the package would be 1.0.1-alpha.N. Guard
+      # against tagging a commit that was not prepared per docs/RELEASING.md.
+      - name: Resolve and validate version
+        id: version
+        run: |
+          dotnet tool install --global nbgv
+          version="$(nbgv get-version -v NuGetPackageVersion)"
+          echo "Computed package version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "$version" != "$tag_version" ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME expects package version $tag_version but NBGV computed $version from the tagged commit's version.json. Set version.json to $tag_version on the tagged commit (nbgv prepare-release) — see docs/RELEASING.md."
+              exit 1
+            fi
+          fi
+
+      - name: Extract changelog section
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { flag = 1; next }
+            /^## \[/ { flag = 0 }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::warning::No CHANGELOG.md section found for version $VERSION."
+            echo "_No changelog entry for this version._" > release-notes.md
+          fi
+          echo "Release notes:"
+          cat release-notes.md
+
+      - name: Pack NuGet packages
+        run: |
+          dotnet pack src/Cs2VideoGenerator.Core/Cs2VideoGenerator.Core.csproj --no-build -c Release -o artifacts/packages
+          # The CLI tool package packs from publish output; no --no-build.
+          dotnet pack src/Cs2VideoGenerator.Cli/Cs2VideoGenerator.Cli.csproj -c Release -o artifacts/packages
+          ls -la artifacts/packages/
+
+      # Self-contained folder archives (NOT single-file): Core's NativeAssetProvider
+      # resolves runtimes/<rid>/native relative to Assembly.Location, which is empty in
+      # single-file bundles (verified: the provider throws), and self-extract loses the
+      # mock_server exec bit. The folder layout is the one the code actually probes.
+      - name: Publish CLI archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          for rid in win-x64 linux-x64; do
+            out="dist/csvg-$VERSION-$rid"
+            dotnet publish src/Cs2VideoGenerator.Cli/Cs2VideoGenerator.Cli.csproj \
+              -c Release -r "$rid" --self-contained -o "$out"
+            # The apphost embeds the entry assembly name, so the executable itself can
+            # be renamed to the tool's command name.
+            if [ "$rid" = "win-x64" ]; then
+              mv "$out/Cs2VideoGenerator.Cli.exe" "$out/csvg.exe"
+            else
+              mv "$out/Cs2VideoGenerator.Cli" "$out/csvg"
+            fi
+            # Trim debug/hosting leftovers and native assets for other RIDs.
+            rm -f "$out"/*.pdb "$out"/web.config "$out"/*.staticwebassets.endpoints.json
+            find "$out/runtimes" -mindepth 1 -maxdepth 1 -not -name "$rid" -exec rm -rf {} +
+            find "$out/runtimes" -type f
+            if [ "$rid" = "win-x64" ]; then
+              (cd dist && zip -qr "csvg-$VERSION-$rid.zip" "csvg-$VERSION-$rid")
+            else
+              tar -czf "$out.tar.gz" -C dist "csvg-$VERSION-$rid"
+            fi
+            rm -rf "$out"
+          done
+          ls -la dist/
+
+      # Last gate before anything leaves the runner: no artifact may carry an absolute
+      # build path (the build machine's OS username and directory layout). See
+      # docs/build-path-privacy.md.
+      #
+      # --only scopes the scan to first-party output. Both targets vendor third-party
+      # binaries that carry their own authors' build paths and are not ours to fix: the
+      # self-contained CLI archives bundle the .NET runtime, and the CLI tool package
+      # bundles its dependency assemblies.
+      - name: Check artifacts for embedded build paths
+        run: |
+          python3 .github/scripts/check-embedded-paths.py artifacts/packages dist \
+            --only 'Cs2VideoGenerator' --only 'csvg(\.exe)?$' \
+            --only 'mock_server' --only 'server\.(so|dll)$'
+
+      # Dry runs (workflow_dispatch) stop here: the full artifact set is uploaded at
+      # the end of the job but nothing is pushed or released.
+      #
+      # Push to this repo's GitHub Packages NuGet feed using the built-in GITHUB_TOKEN
+      # (no nuget.org key). GitHub Packages' service index advertises no symbol endpoint,
+      # so the client pushes only the .nupkg; the .snupkg rides along on the GitHub
+      # Release below. The package is linked to this repo via the csproj RepositoryUrl.
+      # --skip-duplicate keeps re-runs idempotent.
+      - name: Push to GitHub Packages
+        if: github.event_name == 'push'
+        run: |
+          dotnet nuget push "artifacts/packages/*.nupkg" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --skip-duplicate
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          prerelease_flag=""
+          if [[ "$VERSION" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            $prerelease_flag \
+            artifacts/packages/*.nupkg \
+            artifacts/packages/*.snupkg \
+            dist/csvg-*
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            artifacts/packages/*
+            dist/csvg-*

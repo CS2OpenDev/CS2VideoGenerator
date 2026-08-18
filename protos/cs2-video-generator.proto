@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+option csharp_namespace = "Cs2VideoGenerator.Core.Proto";
+
+package cs2_video_generator;
+
+service Cs2GameService {
+  // Establishes a bi-directional stream for commands and events.
+  // The client (plugin) streams events to the server, and the server streams commands back.
+  rpc CreateGameSession(stream CsProcessEvent) returns (stream CsControlRequest);
+}
+
+// === Messages sent FROM .NET Core TO the Plugin ===
+message CsControlRequest {
+  oneof command {
+    LoadDemoCommand load_demo = 1;
+    ResumeDemoCommand resume_demo = 2;
+    PauseDemoCommand pause_demo = 3;
+    CloseDemoCommand close_demo = 4;
+    SetDemoTickCommand set_demo_tick = 5;
+    PlayDemoTickRangeCommand play_demo_tick_range = 6;
+    SetSpectatorTargetCommand set_spectator_target = 7;
+    SetDemoOptionsCommand set_demo_options = 8;
+    SetTickUpdateFrequencyCommand set_tick_update_frequency = 9;
+    SetDemoTimescaleCommand set_demo_timescale = 10;
+    QueryDemoStateCommand query_demo_state = 11;
+    ScheduleCommandsAtTickCommand schedule_commands_at_tick = 12;
+    ClearScheduledCommandsCommand clear_scheduled_commands = 13;
+    SetGameEventSubscriptionCommand set_game_event_subscription = 14;
+    ExecuteConsoleCommandsCommand execute_console_commands = 15;
+  }
+
+  // Envelope-level correlation id, OUTSIDE the oneof so any command can carry it.
+  // When set (non-zero), a plugin supporting the "command-ack" capability replies
+  // with a CommandAckEvent echoing this id once the command has been applied.
+  // Absent/0 = no ack requested (legacy behavior; old plugins ignore this field).
+  // Numbered high to keep the oneof arm range contiguous.
+  optional uint64 command_id = 100;
+}
+
+// DEMO CONTROL MESSAGES
+
+message LoadDemoCommand {
+  string demo_path = 1;
+  // When true (and the plugin supports the "user-demo-ui" capability), the plugin
+  // leaves the in-game demo UI available to the user: it skips the per-load
+  // `demoui 0` and actively re-enables `demo_ui_mode 1` (which is disabled once at
+  // plugin startup). Absent/false = legacy behavior: the demo UI stays hidden and
+  // in-game user playback control is designed out.
+  optional bool interactive_demo_ui = 2;
+}
+
+message ResumeDemoCommand {
+  // could be empty if no params are needed
+}
+
+message PauseDemoCommand {
+  // could be empty if no params are needed
+}
+
+message CloseDemoCommand {
+  // could be empty if no params are needed
+}
+
+message SetDemoTickCommand {
+  // could be empty if no params are needed
+  int32 demo_tick = 1;
+  // When set (and the plugin supports the "seek-ack" capability): after the seek
+  // arrives, the plugin issues demo_pause (true) / demo_resume (false) and reports
+  // the resulting state in the CommandAckEvent. Absent = legacy behavior: post-seek
+  // play/pause state is neither enforced nor reported.
+  optional bool pause_after_seek = 2;
+}
+
+message PlayDemoTickRangeCommand {
+  // could be empty if no params are needed
+  int32 starting_tick = 1;
+  int32 ending_tick = 2;
+}
+
+message SetSpectatorTargetCommand {
+  // Player name to spectate (used with spec_player console command)
+  string player_name = 1;
+  // SteamID64 of the player to spectate. EXPERIMENTAL: when set (and the plugin
+  // advertises the "spectate-by-steamid" capability), the plugin attempts
+  // `spec_lock_to_accountid <accountid>` (low 32 bits of the SteamID64) first and
+  // falls back to spec_player by name. Known-unreliable in some CS2 builds — see
+  // README Known Limitations.
+  optional uint64 steam_id64 = 2;
+}
+
+message SetDemoOptionsCommand {
+  bool xray_enabled = 1;
+  bool true_view_enabled = 2;
+  bool hud_enabled = 3;
+  bool show_assists_in_feed = 4;
+  bool show_only_death_notices = 5;
+}
+
+message SetTickUpdateFrequencyCommand {
+  // How often to send tick updates (in ticks). 0 = every tick, 500 = every 500 ticks.
+  // Default is 500 ticks (~7.8 seconds at 64 ticks/sec).
+  int32 frequency = 1;
+}
+
+message SetDemoTimescaleCommand {
+  // demo_timescale value; 1.0 = normal speed. The plugin executes
+  // `demo_timescale <timescale>`. Requires the "timescale-set" capability.
+  // There is no engine readback in this version: DemoStateEvent.demo_timescale
+  // reports the last host-set value only.
+  float timescale = 1;
+}
+
+message QueryDemoStateCommand {
+  // Empty. A plugin supporting the "demo-state-events" capability replies with a
+  // DemoStateEvent snapshot (in_reply_to_command_id = the enclosing
+  // CsControlRequest.command_id when one was set).
+}
+
+message ScheduleCommandsAtTickCommand {
+  // Registers console commands to execute ON THE ENGINE THREAD when the observed
+  // demo tick first crosses demo_tick: an entry at tick T fires on the first
+  // observation where lastObservedTick < T <= currentTick (mirv_cmd semantics), so
+  // seeks/jumps that step over T cannot skip it. One-shot: fired entries are
+  // removed. Requires the "tick-scheduled-commands" capability.
+  //
+  // Lifetime: schedules are tied to the currently loaded demo - LoadDemoCommand
+  // clears all unfired schedules; ClearScheduledCommandsCommand clears them
+  // explicitly. A command_id ack (when requested) confirms REGISTRATION, not
+  // execution; the stream's in-order delivery guarantees the schedule is armed
+  // before any later command (e.g. ResumeDemo) is processed.
+  //
+  // Caution (real CS2): the engine may swallow commands scheduled in roughly the
+  // first 68 ticks after a demo (re)start - CSDM clamps its scheduled ticks to
+  // >= 96 for this reason (cs-demo-manager issue #1343). The plugin executes
+  // exactly what is registered; callers should clamp early ticks themselves.
+  int32 demo_tick = 1;
+  // Console commands executed in order at the crossing.
+  repeated string console_commands = 2;
+}
+
+message ClearScheduledCommandsCommand {
+  // Empty. Drops all not-yet-fired ScheduleCommandsAtTickCommand registrations.
+  // Internal plugin schedules (e.g. PlayDemoTickRange's auto-pause) are unaffected.
+  // Requires the "tick-scheduled-commands" capability.
+}
+
+message ExecuteConsoleCommandsCommand {
+  // Executes console commands ON THE ENGINE THREAD as soon as the engine reaches its
+  // next frame - no tick condition, no demo required. Requires the "console-exec"
+  // capability. This is the immediate counterpart of ScheduleCommandsAtTickCommand and
+  // the only way to reach the console on a path that cannot wait for a tick that may
+  // never arrive (a clip aborting mid-playback has to issue `endmovie` and restore its
+  // cvars right now).
+  //
+  // Blind: the engine returns nothing, so a command_id ack (when requested) confirms
+  // that the batch was QUEUED FOR THE ENGINE THREAD - not that the engine accepted it,
+  // and not that it had any effect. Unknown commands and rejected values fail silently
+  // inside CS2, exactly as they do when typed into the console.
+  //
+  // Commands execute in order, and in the same order relative to every other console
+  // command the plugin issues (they share one engine-thread queue).
+  repeated string console_commands = 1;
+}
+
+message SetGameEventSubscriptionCommand {
+  // Game-event telemetry ("game-event-telemetry" capability), OFF by default.
+  // Enabling lazily installs the plugin's game-event hook (never at load) and
+  // starts forwarding GameEventTelemetryEvents for events whose name is in
+  // event_names (empty = all events). Disabling stops forwarding. Each command
+  // REPLACES the previous filter. A failed hook install fails the command
+  // (CommandAckEvent success=false when a command_id was set).
+  bool enabled = 1;
+  repeated string event_names = 2;
+}
+
+
+// === Messages sent FROM the Plugin TO .NET Core ===
+message CsProcessEvent {
+  oneof event {
+    TickUpdateEvent tick_update = 1;
+    DemoPlaybackStatusChange demo_playback_status_change = 2;
+    Cs2ProcessStatus process_status = 3;
+    DemoStateEvent demo_state = 4;
+    CommandAckEvent command_ack = 5;
+    GameEventTelemetryEvent game_event_telemetry = 6;
+  }
+}
+
+// A client-side game event observed by the plugin's game-event hook, forwarded
+// while a SetGameEventSubscriptionCommand subscription is active. Best-effort
+// telemetry: the plugin's queue is bounded and drops the oldest events under
+// backpressure rather than ever blocking the engine thread. Requires the
+// "game-event-telemetry" capability.
+message GameEventTelemetryEvent {
+  // The game event name (e.g. "player_death", "round_start").
+  string event_name = 1;
+  // The event's KV3 payload serialized as JSON (tier0 SaveKV3AsJSON).
+  string json_payload = 2;
+}
+
+message TickUpdateEvent {
+  int32 current_tick = 1;
+  // Whether demo playback is currently paused. Sent by plugins supporting the
+  // "engine-pause-detection" capability (engine truth via IDemoFile::IsDemoPaused);
+  // older builds may send it as echo-truth derived from the last host command.
+  // Absent = plugin predates this field.
+  optional bool is_paused = 2;
+}
+
+message DemoPlaybackStatusChange {
+  enum DemoPlaybackStatus {
+    UNKNOWN = 0;
+    DEMO_LOADING = 1;
+    DEMO_LOADED = 2;
+    PLAYING = 3;
+    PAUSED = 4;
+    STOPPING = 5;
+    STOPPED = 6;
+    DEMO_FILE_NOT_FOUND = -1;
+    DEMO_FILE_UNPLAYABLE = -2;
+  }
+  DemoPlaybackStatus previous_status = 1;
+  DemoPlaybackStatus new_status = 2;
+  optional string error_message = 3;
+}
+
+// Engine-truth demo state snapshot. Low-rate and change-driven — the hot path
+// stays TickUpdateEvent. Emitted (a) in reply to QueryDemoStateCommand, (b) on any
+// observed CHANGE of a field the plugin can read (pause flip, playing->stopped,
+// demo path change), (c) as the completion payload of state-affecting commands.
+// All state fields are optional so plugin builds can ship them incrementally;
+// absent = this build cannot read that field. Requires the "demo-state-events"
+// capability.
+message DemoStateEvent {
+  enum ChangeOrigin {
+    ORIGIN_UNKNOWN = 0;       // pre-upgrade plugin / indeterminate
+    ORIGIN_HOST_COMMAND = 1;  // matches a recently-executed CsControlRequest
+    ORIGIN_USER = 2;          // observed engine change with no matching host command
+  }
+  optional bool is_playing_demo = 1;         // ISource2EngineToClient::IsPlayingDemo
+  optional bool is_paused = 2;               // IDemoFile::IsDemoPaused
+  optional int32 demo_tick = 3;              // IDemoFile::GetDemoTick
+  optional string demo_file_path = 4;        // ISource2EngineToClient::GetDemoFilePath; empty = no demo ("demo-identity" capability)
+  optional float demo_timescale = 5;         // last host-set value (no engine readback in this version)
+  optional string spectated_player_name = 6; // RESERVED: no engine read exists yet; omitted until "spectator-report" ships
+  ChangeOrigin origin = 7;
+  optional uint64 in_reply_to_command_id = 8;
+}
+
+// Acknowledges a CsControlRequest that carried a command_id. Requires the
+// "command-ack" capability.
+message CommandAckEvent {
+  // Echoes CsControlRequest.command_id.
+  uint64 command_id = 1;
+  bool success = 2;
+  optional string error_message = 3;
+  // For seeks / tick-affecting commands: the tick the engine was actually observed
+  // at when the command was deemed complete (unlike the forced TickUpdateEvent,
+  // which historically pre-echoed the TARGET tick before arrival).
+  optional int32 observed_demo_tick = 4;
+}
+
+message Cs2ProcessStatus {
+  enum ProcessStatus {
+    UNKNOWN = 0;
+    INITIALIZING = 1;
+    READY = 2;
+    ERROR = 3;
+  }
+  ProcessStatus status = 1;
+  optional string error_message = 2;
+
+  // Version handshake. All fields are optional and backward-compatible:
+  // an older plugin simply omits them and the orchestrator treats the versions
+  // as unknown (warning, never an error).
+
+  // CSVG plugin version embedded at build time (e.g. "1.0.1").
+  optional string plugin_version = 3;
+  // HL2SDK submodule commit SHA the plugin was built against.
+  optional string hl2sdk_commit = 4;
+  // Running CS2 build number (steam.inf ClientVersion), empty/omitted if unknown
+  // (e.g. mock server without a simulated game version).
+  optional string game_version = 5;
+
+  // Capability tokens supported by this plugin build (v1.1). Known tokens:
+  //   "demo-state-events"      DemoStateEvent emission + QueryDemoStateCommand
+  //   "command-ack"            CommandAckEvent for command_id-carrying requests
+  //   "seek-ack"               SetDemoTickCommand.pause_after_seek + arrival-acked seeks
+  //   "timescale-set"          SetDemoTimescaleCommand
+  //   "demo-identity"          DemoStateEvent.demo_file_path population
+  //   "engine-pause-detection" TickUpdateEvent.is_paused / DemoStateEvent.is_paused are engine truth
+  //   "load-failure-detection" DEMO_FILE_NOT_FOUND / DEMO_FILE_UNPLAYABLE are actually emitted
+  //   "spectate-by-steamid"    SetSpectatorTargetCommand.steam_id64 honored
+  //   "user-demo-ui"           LoadDemoCommand.interactive_demo_ui honored
+  //   "spectator-report"       DemoStateEvent.spectated_player_name population (future)
+  //   "tick-scheduled-commands" ScheduleCommandsAtTickCommand / ClearScheduledCommandsCommand
+  //   "game-event-telemetry"   SetGameEventSubscriptionCommand + GameEventTelemetryEvent
+  //                            (advertised only where the game-event hook is available)
+  //   "console-exec"           ExecuteConsoleCommandsCommand (immediate engine-thread execution)
+  // Older plugins omit the field -> empty list -> the orchestrator assumes the v1.0
+  // baseline command set and degrades gracefully (warning, never an error) — same
+  // philosophy as the version fields above.
+  repeated string capabilities = 6;
+}

@@ -1,0 +1,24 @@
+<Solution>
+    <Configurations>
+        <Platform Name="Any CPU" />
+        <Platform Name="x64" />
+        <Platform Name="x86" />
+    </Configurations>
+    <Folder Name="/Solution Files/">
+        <File Path="Directory.Build.props" />
+        <File Path="Directory.Packages.props" />
+        <File Path="global.json" />
+        <File Path="nuget.config" />
+        <File Path="README.md" />
+        <File Path="version.json" />
+    </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/Cs2VideoGenerator.Cli/Cs2VideoGenerator.Cli.csproj" />
+        <Project Path="src/Cs2VideoGenerator.Core/Cs2VideoGenerator.Core.csproj" />
+    </Folder>
+    <Folder Name="/test/">
+        <File Path="test/Directory.Packages.props" />
+        <Project Path="test/Cs2VideoGenerator.Cli.Tests/Cs2VideoGenerator.Cli.Tests.csproj" />
+        <Project Path="test/Cs2VideoGenerator.Core.Tests/Cs2VideoGenerator.Core.Tests.csproj" />
+    </Folder>
+</Solution>

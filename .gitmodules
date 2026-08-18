@@ -1,0 +1,7 @@
+[submodule "plugin/Cs2VideoGenerator.Plugin.Grpc/external/hl2sdk"]
+	path = plugin/Cs2VideoGenerator.Plugin.Grpc/external/hl2sdk
+	url = https://github.com/alliedmodders/hl2sdk.git
+	branch = cs2
+[submodule "plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg"]
+	path = plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg
+	url = https://github.com/microsoft/vcpkg.git

@@ -1,0 +1,75 @@
+# Composite action: downloads the cpp-plugin-<rid> artifacts produced by
+# build-native-plugins.yml, arranges them into the layout the .NET build expects
+# (artifacts/build/.../bin/<rid>/), and hard-fails if any required native asset is
+# missing — a NuGet package or CLI archive built without them would ship broken.
+#
+# Used by ci.yml (ubuntu + windows test legs) and release.yml.
+name: Set up native plugin assets
+description: Download, arrange, and assert completeness of the native plugin artifacts
+
+runs:
+  using: composite
+  steps:
+    - name: Download all C++ artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: cpp-plugin-*
+        path: artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin/
+        merge-multiple: false
+
+    - name: Arrange native assets
+      shell: bash
+      run: |
+        base="artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin"
+        if ls "$base"/cpp-plugin-* 1>/dev/null 2>&1; then
+          for dir in "$base"/cpp-plugin-*; do
+            rid="${dir##*cpp-plugin-}"
+            mkdir -p "$base/$rid"
+            cp -r "$dir"/* "$base/$rid/"
+            rm -rf "$dir"
+          done
+        fi
+        # macOS mock_server: CS2 does not run on macOS and GitHub's macOS runners are
+        # expensive, so there is no macOS build leg. The osx-arm64 mock is built locally
+        # on an Apple Silicon Mac and committed to the repo (see the plugin's
+        # scripts/refresh-macos-mock.sh + docs/RELEASING.md); fold it in from the
+        # checkout alongside the CI-built RIDs so it packs into runtimes/osx-arm64/native/.
+        prebuilt="plugin/Cs2VideoGenerator.Plugin.Grpc/prebuilt"
+        if [ -d "$prebuilt" ]; then
+          for dir in "$prebuilt"/*/; do
+            [ -d "$dir" ] || continue
+            rid="$(basename "$dir")"
+            mkdir -p "$base/$rid"
+            cp -r "$dir"* "$base/$rid/"
+          done
+        fi
+        # actions/download-artifact strips Unix permissions; restore the exec bit
+        find "$base" -type f \( -name mock_server -o -name server.so \) -exec chmod +x {} +
+        echo "Native assets layout:"
+        find "$base" -type f
+
+    - name: Assert native assets are complete
+      shell: bash
+      run: |
+        base="artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin"
+        required=(
+          "$base/win-x64/server.dll"
+          "$base/win-x64/mock_server.exe"
+          "$base/linux-x64/server.so"
+          "$base/linux-x64/mock_server"
+          # macOS ships the mock only (no server plugin — CS2 is not on macOS); this
+          # asset is the committed prebuilt folded in above, not a CI build product.
+          "$base/osx-arm64/mock_server"
+        )
+        missing=0
+        for f in "${required[@]}"; do
+          if [ ! -f "$f" ]; then
+            echo "::error::Missing required native asset: $f"
+            missing=1
+          fi
+        done
+        if [ "$missing" -ne 0 ]; then
+          echo "Native asset set is incomplete; the packages would ship broken. Failing the build."
+          exit 1
+        fi
+        echo "All required native assets are present."

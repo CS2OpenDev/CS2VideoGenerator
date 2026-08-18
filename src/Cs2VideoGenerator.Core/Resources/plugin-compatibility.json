@@ -1,0 +1,14 @@
+{
+  // Plugin/game compatibility reference data.
+  // Policy: newer/unknown CS2 builds WARN and proceed; only pairs listed in
+  // knownBrokenVersions error, and even those are overridable with --force.
+  //
+  // builtForCs2Build: the CS2 build (steam.inf ClientVersion) the bundled plugin
+  //   was built/verified against. null = no reference recorded; the game build is
+  //   then accepted silently.
+  // knownBrokenVersions: array of { pluginVersionRange?, gameBuild, reason }.
+  //   pluginVersionRange: null = all plugin versions, exact ("1.0.1") or prefix
+  //   wildcard ("1.0.*"). This list intentionally starts empty.
+  "builtForCs2Build": null,
+  "knownBrokenVersions": []
+}

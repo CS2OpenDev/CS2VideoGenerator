@@ -1,0 +1,35 @@
+{
+    "cmake.useCMakePresets": "always",
+    "cmake.configureOnOpen": true,
+    "cmake.buildDirectory": "${workspaceFolder}/../../artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/${presetName}",
+    "C_Cpp.dimInactiveRegions": false,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.clang_format_style": "file",
+    "C_Cpp.clang_format_path": "/opt/homebrew/bin/clang-format",
+    "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+    "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
+    "C_Cpp.codeAnalysis.runAutomatically": true,
+    "editor.formatOnSave": true,
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[c]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "cmake.options.statusBarVisibility": "visible",
+    "cmake.configureArgs": [
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+    ],
+    "cSpell.words": [
+        "csvg",
+        "csgo",
+        "playdemo",
+        "gototick",
+        "gameinfo",
+        "startmovie",
+        "FCVAR"
+    ],
+    "github-actions.workflows.pinned.workflows": [
+        "${workspaceFolder}/.github/workflows/ci.yml"
+    ]
+}

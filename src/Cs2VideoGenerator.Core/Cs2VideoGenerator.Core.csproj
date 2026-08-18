@@ -1,0 +1,117 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- NuGet Package Configuration -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>Cs2VideoGenerator.Core</PackageId>
+    <Title>CS2 Video Generator Core Library</Title>
+    <Description>Core library for automating Counter-Strike 2 video generation from demo files. Provides CS2 process management, gRPC plugin communication, OBS Studio integration, and video capture orchestration.</Description>
+    <Authors>Austin Gray</Authors>
+    <PackageTags>cs2;counter-strike;demo;video;recording;obs;grpc;game-capture</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) Austin Gray</Copyright>
+    <!-- Symbols + SourceLink for debuggable packages -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Ship XML docs for consumer IntelliSense -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Pack the repo README at the package root so nuget.org renders it.
+       (PackageReadmeFile names the file; a packed None supplies it.) -->
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CliWrap"/>
+    <PackageReference Include="FFMpegCore"/>
+    <PackageReference Include="Google.Protobuf"/>
+    <PackageReference Include="Grpc.AspNetCore"/>
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all"/>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all"/>
+    <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all"/>
+    <PackageReference Include="OpenTelemetry"/>
+    <PackageReference Include="Obs.NET"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Allow the test project to access internal types for unit testing -->
+    <InternalsVisibleTo Include="Cs2VideoGenerator.Core.Tests"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\protos\cs2-video-generator.proto" GrpcServices="Server"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Plugin/game compatibility reference data: shipped in the assembly so a
+         package update can revise the known-broken list without a config change. -->
+    <EmbeddedResource Include="Resources\plugin-compatibility.json"/>
+  </ItemGroup>
+
+  <!-- Native Assets Configuration
+       CMake outputs to {rid}/ subdirectories (e.g., win-x64/, linux-x64/, osx-arm64/).
+       MSBuild's %(RecursiveDir) preserves this structure for NuGet packaging.
+       Adding new platforms requires zero csproj changes - just build for that RID. -->
+  <PropertyGroup>
+    <NativeArtifactsPath Condition="'$(NativeArtifactsPath)' == ''">..\..\artifacts\build\Cs2VideoGenerator.Plugin.GRPC\Release\bin\</NativeArtifactsPath>
+  </PropertyGroup>
+
+  <!-- Build-output layout: copy native assets into bin/runtimes/<rid>/native/ for
+       direct project references and tests. Pack is handled separately below. -->
+  <ItemGroup>
+    <Content Include="$(NativeArtifactsPath)**\server.*;$(NativeArtifactsPath)**\mock_server*"
+             Exclude="$(NativeArtifactsPath)**\*.pdb;$(NativeArtifactsPath)**\*.lib"
+             Pack="false"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="runtimes\%(RecursiveDir)native\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Pack native assets at exactly runtimes/<rid>/native/<file>.
+       This cannot be done with a per-file PackagePath: NuGet's folder-vs-file heuristic
+       keys on the extension, so an extensionless binary (the Linux/macOS `mock_server`)
+       is treated as a folder and the path is duplicated
+       (runtimes/<rid>/native/mock_server/<rid>/mock_server).
+       Instead we stage the assets into a tree whose RecursiveDir already encodes
+       "<rid>/native/", then pack with a folder PackagePath ("runtimes/"). NuGet appends
+       RecursiveDir+filename for a folder target, which is correct for every file whether
+       or not it has an extension. -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackNativeRuntimeAssets</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="_StageNativeRuntimeAssets">
+    <ItemGroup>
+      <_NativeRuntimeSource Include="$(NativeArtifactsPath)**\server.*;$(NativeArtifactsPath)**\mock_server*"
+                            Exclude="$(NativeArtifactsPath)**\*.pdb;$(NativeArtifactsPath)**\*.lib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NativeRuntimeSource)"
+          DestinationFiles="@(_NativeRuntimeSource->'$(IntermediateOutputPath)nativeruntimes\%(RecursiveDir)native\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PackNativeRuntimeAssets" DependsOnTargets="_StageNativeRuntimeAssets">
+    <ItemGroup>
+      <!-- RecursiveDir here is "<rid>/native/"; folder PackagePath -> runtimes/<rid>/native/<file>.
+           Do not use a %(FullPath) transform on Include: it strips RecursiveDir and the
+           RID/native segment would be lost. -->
+      <_StagedNativeRuntimeAsset Include="$(IntermediateOutputPath)nativeruntimes\**\*" />
+      <TfmSpecificPackageFile Include="@(_StagedNativeRuntimeAsset)">
+        <PackagePath>runtimes/</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
+</Project>

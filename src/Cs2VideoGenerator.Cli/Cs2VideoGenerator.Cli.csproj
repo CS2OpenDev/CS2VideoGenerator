@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- dotnet tool packaging: `dotnet tool install Cs2VideoGenerator.Cli` installs the
+       `csvg` command. PackAsTool only affects `dotnet pack` output — the project remains a
+       normal runnable/publishable exe. The tool package is packed from publish output, so the
+       native plugin assets (Content items flowing from Cs2VideoGenerator.Core's
+       runtimes/<rid>/native layout) and appsettings.json ship inside the tool. -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>csvg</ToolCommandName>
+    <PackageId>Cs2VideoGenerator.Cli</PackageId>
+    <Title>CS2 Video Generator CLI (csvg)</Title>
+    <Description>Command-line tool (csvg) for automating Counter-Strike 2 video generation from demo files: capture clips defined by a compilation JSON, watch demos with recording, and manage the backups CSVG takes of modified game files.</Description>
+    <Authors>Austin Gray</Authors>
+    <PackageTags>cs2;counter-strike;demo;video;recording;obs;cli;dotnet-tool</PackageTags>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright (c) Austin Gray</Copyright>
+  </PropertyGroup>
+
+  <!-- Pack the repo README at the package root so nuget.org renders it. -->
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser"/>
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol"/>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting"/>
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore"/>
+    <PackageReference Include="OpenTelemetry.Instrumentation.GrpcNetClient"/>
+    <PackageReference Include="OpenTelemetry.Instrumentation.Process"/>
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime"/>
+    <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all"/>
+    <PackageReference Include="Spectre.Console"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Cs2VideoGenerator.Core\Cs2VideoGenerator.Core.csproj"/>
+  </ItemGroup>
+
+</Project>

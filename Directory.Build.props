@@ -1,0 +1,18 @@
+<Project>
+  <!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
+  <PropertyGroup>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+  </PropertyGroup>
+
+  <!-- Path privacy: without this, every assembly records the absolute path of its .pdb
+       in the CodeView debug directory, and the .pdb records the absolute source root -
+       i.e. the build machine's directory layout ships to consumers. Setting it here
+       normalizes both (it implies DeterministicSourcePaths; SourceLink is referenced by
+       the packable projects). CI-only is deliberate: locally it would repoint source
+       paths at /_/ and break step-into debugging of your own build. Releases are
+       produced by .github/workflows/release.yml, which also gates on
+       .github/scripts/check-embedded-paths.py - see docs/build-path-privacy.md. -->
+  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == '' and '$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,174 @@
+# Reusable workflow: builds the C++ engine plugin + mock server for every shipped RID
+# and uploads them as cpp-plugin-<rid> artifacts.
+#
+# Called by ci.yml (every push/PR) and release.yml (v* tags) so the build logic cannot
+# drift between CI and releases. Consumers download the artifacts with the
+# .github/actions/setup-native-assets composite action.
+name: Build native plugins
+
+on:
+  workflow_call: {}
+
+env:
+  # Default to local file-based vcpkg cache (works everywhere including act).
+  # Upgraded to x-gha when running on GitHub Actions (see cache export step).
+  VCPKG_BINARY_SOURCES: 'clear;files,/tmp/vcpkg-cache,readwrite'
+  # Allow vcpkg to use system cmake/ninja on ARM hosts (act on Apple Silicon).
+  # Harmless on native x86_64 GitHub Actions runners.
+  VCPKG_FORCE_SYSTEM_BINARIES: '1'
+
+jobs:
+  cpp-build:
+    name: Build C++ (${{ matrix.rid }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            preset: release-unix
+            packages: cmake ninja-build
+          - rid: win-x64
+            preset: cross-windows-x64
+            # LLVM >= 19 is installed from apt.llvm.org in a dedicated step: the MSVC
+            # STL that xwin downloads requires clang 19+ (STL1000), newer than Ubuntu's
+            # packaged clang. Only the toolchain-independent tools come from Ubuntu.
+            packages: cmake ninja-build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      # The win-x64 job builds two full vcpkg dependency trees (x64-linux host tools
+      # + x64-windows-clang-static target) plus LLVM 19 and the xwin SDK splat; a
+      # previous run died with a runner shutdown signal mid-build, consistent with
+      # disk exhaustion. Reclaim ~25-30GB of preinstalled toolchains we never use.
+      - name: Free runner disk space
+        if: matrix.rid == 'win-x64'
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache/CodeQL \
+                      /usr/local/.ghcup /opt/az /usr/local/share/boost
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          echo "After cleanup:"
+          df -h /
+
+      - name: Install dependencies (apt)
+        if: matrix.packages != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+
+      # vcpkg's x-gha binary-cache provider stopped working after GitHub's cache
+      # service v2 migration (ACTIONS_CACHE_URL is no longer exposed; runs showed
+      # "Stored binaries in 0 destinations"). Cache the file-based provider dir
+      # (the workflow-level VCPKG_BINARY_SOURCES default) with actions/cache instead.
+      - name: Cache vcpkg binary packages
+        if: env.ACT != 'true'
+        uses: actions/cache@v4
+        with:
+          path: /tmp/vcpkg-cache
+          key: vcpkg-bin-${{ matrix.rid }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
+          restore-keys: |
+            vcpkg-bin-${{ matrix.rid }}-
+
+      - name: Bootstrap vcpkg
+        run: ./plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Install LLVM 19 (Windows cross-compilation)
+        if: matrix.rid == 'win-x64'
+        env:
+          LLVM_MAJOR: '19'
+        run: |
+          # The MSVC STL fetched by xwin static-asserts clang >= 19 (STL1000); Ubuntu's
+          # packaged clang is older, so install from apt.llvm.org.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_MAJOR"
+          # clang-cl ships in clang-tools-<ver>; llvm-<ver> provides llvm-lib/llvm-rc
+          sudo apt-get install -y "clang-tools-$LLVM_MAJOR" "lld-$LLVM_MAJOR" "llvm-$LLVM_MAJOR"
+
+      - name: Verify MSVC-style LLVM tools (Windows cross-compilation)
+        if: matrix.rid == 'win-x64'
+        run: |
+          # The toolchain file searches for UNVERSIONED tool names; the apt.llvm.org
+          # packages install versioned binaries only. Symlink any missing tool from
+          # the newest versioned variant.
+          # Full set: toolchain uses clang-cl/lld-link/llvm-lib/llvm-rc; the openssl
+          # overlay port additionally requires clang/llvm-ar/llvm-ranlib.
+          TOOLS="clang-cl lld-link llvm-lib llvm-rc clang llvm-ar llvm-ranlib"
+          for tool in $TOOLS; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              versioned=$(find /usr/bin -maxdepth 1 -name "${tool}-*" 2>/dev/null | sort -V | tail -1)
+              if [ -n "$versioned" ]; then
+                sudo ln -sf "$versioned" "/usr/local/bin/$tool"
+                echo "Symlinked $tool -> $versioned"
+              fi
+            fi
+          done
+          missing=0
+          for tool in $TOOLS; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "$tool: $(command -v "$tool")"
+            else
+              echo "::error::Required tool '$tool' not found after package install"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Install xwin (Windows cross-compilation)
+        if: matrix.rid == 'win-x64'
+        env:
+          XWIN_VERSION: '0.8.0'
+        run: |
+          curl -fsSL "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar xzf - --strip-components=1 -C /usr/local/bin "xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl/xwin"
+          # --cache-dir is a global xwin option and must precede the subcommand
+          xwin --accept-license --cache-dir /tmp/xwin-cache splat --output "$HOME/.xwin"
+
+      - name: Configure CMake
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: cmake --build --preset ${{ matrix.preset }} --parallel
+
+      # vcpkg writes the real compiler errors to buildtree log files that never
+      # reach the job output; surface them so failures are diagnosable from the UI.
+      - name: Dump vcpkg failure logs
+        if: failure()
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: |
+          echo "Tails of vcpkg buildtree logs modified in the last 3h:"
+          found=0
+          while IFS= read -r f; do
+            found=1
+            echo "::group::${f}"
+            tail -n 120 "$f"
+            echo "::endgroup::"
+          done < <(find external/vcpkg/buildtrees -maxdepth 2 -name '*.log' -mmin -180 2>/dev/null | head -20)
+          [ "$found" = "1" ] || echo "(no recent vcpkg logs found)"
+
+      # __FILE__ expansions in gRPC/abseil/OpenSSL would otherwise bake this runner's
+      # absolute paths into every shipped binary. cmake/path-privacy.cmake maps them
+      # away; this asserts the maps actually applied (a misspelled -ffile-prefix-map is
+      # silently ignored, and clang-cl ignores the flag entirely without /clang:).
+      # .pdb/.lib are exempt: they are build-tree only, excluded from both the NuGet
+      # package and the CLI archives.
+      - name: Check for embedded build paths
+        run: |
+          python3 .github/scripts/check-embedded-paths.py \
+            "artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin/${{ matrix.rid }}" \
+            --allow '\.pdb$' --allow '\.lib$' --allow '\.exp$'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-plugin-${{ matrix.rid }}
+          path: artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin/${{ matrix.rid }}/

@@ -1,0 +1,49 @@
+diff --git a/Configurations/unix-Makefile.tmpl b/Configurations/unix-Makefile.tmpl
+index 6f3e540..182784c 100644
+--- a/Configurations/unix-Makefile.tmpl
++++ b/Configurations/unix-Makefile.tmpl
+@@ -336,6 +336,15 @@ libdir={- file_name_is_absolute($libdir)
+ ENGINESDIR=$(libdir)/engines-{- $sover_dirname -}
+ MODULESDIR=$(libdir)/ossl-modules
+ 
++# vcpkg overlay port (Cs2VideoGenerator): the provider/engine directories COMPILED
++# INTO libcrypto, deliberately decoupled from the install paths above. vcpkg configures
++# --prefix as an absolute path inside the build tree, so the stock defines would bake
++# the build machine's filesystem layout into every shipped binary. These are inert
++# here: OpenSSL is linked statically with no-shared/no-module, so nothing is ever
++# loaded from either directory at run time.
++ENGINESDIR_DEF=/usr/local/lib/engines-{- $sover_dirname -}
++MODULESDIR_DEF=/usr/local/lib/ossl-modules
++
+ # Convenience variable for those who want to set the rpath in shared
+ # libraries and applications
+ LIBRPATH=$(libdir)
+@@ -450,8 +459,8 @@ LIB_CPPFLAGS={- our $lib_cppflags =
+                 join(' ', $lib_cppflags,
+                           (map { '-D'.$_ }
+                                'OPENSSLDIR="\"$(OPENSSLDIR)\""',
+-                               'ENGINESDIR="\"$(ENGINESDIR)\""',
+-                               'MODULESDIR="\"$(MODULESDIR)\""'),
++                               'ENGINESDIR="\"$(ENGINESDIR_DEF)\""',
++                               'MODULESDIR="\"$(MODULESDIR_DEF)\""'),
+                           '$(CNF_CPPFLAGS)', '$(CPPFLAGS)') -}
+ LIB_CFLAGS={- join(' ', $target{lib_cflags} || (),
+                         $target{shared_cflag} || (),
+diff --git a/crypto/build.info b/crypto/build.info
+index 872684c..7bb1283 100644
+--- a/crypto/build.info
++++ b/crypto/build.info
+@@ -115,7 +115,12 @@ DEFINE[../libcrypto]=$UPLINKDEF
+ 
+ DEPEND[info.o]=buildinf.h
+ DEPEND[cversion.o]=buildinf.h
+-GENERATE[buildinf.h]=../util/mkbuildinf.pl "$(CC) $(LIB_CFLAGS) $(CPPFLAGS_Q)" "$(PLATFORM)"
++# vcpkg overlay port (Cs2VideoGenerator): do not bake the build command line in.
++# $(CC) here is the compiler AND its flags, which include
++# -ffile-prefix-map=<build machine home>=... - so recording it would re-introduce
++# the very paths those flags exist to remove. Only OpenSSL_version(OPENSSL_CFLAGS)
++# reads this string; nothing in this project calls it.
++GENERATE[buildinf.h]=../util/mkbuildinf.pl "redacted" "$(PLATFORM)"
+ 
+ GENERATE[uplink-x86.S]=../ms/uplink-x86.pl
+ GENERATE[uplink-x86_64.s]=../ms/uplink-x86_64.pl
