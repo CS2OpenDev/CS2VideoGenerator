@@ -57,11 +57,35 @@ jobs:
           echo "After cleanup:"
           df -h /
 
+      # A wedged Azure mirror connect (usually a broken-IPv6 egress blackhole) can
+      # hang `apt-get update` indefinitely with no timeout — a job once sat 96 min on
+      # a single mirror connection before it was cancelled. Bound every apt invocation
+      # in this job at the network level and force IPv4. Written globally so the apt
+      # calls inside llvm.sh (below) inherit it too.
+      - name: Harden apt against mirror/network hangs
+        run: |
+          sudo tee /etc/apt/apt.conf.d/99csvg-ci >/dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          Acquire::ftp::Timeout "30";
+          Acquire::ForceIPv4 "true";
+          EOF
+
       - name: Install dependencies (apt)
         if: matrix.packages != ''
+        timeout-minutes: 20
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.packages }}
+          # `sudo timeout apt-get` (not `timeout sudo` — signals don't reliably cross
+          # sudo to the child) bounds each attempt even if apt's own Acquire timeout
+          # doesn't fire (e.g. a connect that hangs below apt's layer). The 20-min step
+          # backstop exceeds the loop's worst case (3×195s + 300s).
+          for i in 1 2 3; do
+            sudo timeout 180 apt-get update && break
+            echo "apt-get update attempt $i failed or timed out; retrying in 15s" >&2
+            sleep 15
+          done
+          sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y ${{ matrix.packages }}
 
       # vcpkg's x-gha binary-cache provider stopped working after GitHub's cache
       # service v2 migration (ACTIONS_CACHE_URL is no longer exposed; runs showed
@@ -81,16 +105,19 @@ jobs:
 
       - name: Install LLVM 19 (Windows cross-compilation)
         if: matrix.rid == 'win-x64'
+        timeout-minutes: 15
         env:
           LLVM_MAJOR: '19'
         run: |
           # The MSVC STL fetched by xwin static-asserts clang >= 19 (STL1000); Ubuntu's
-          # packaged clang is older, so install from apt.llvm.org.
-          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          # packaged clang is older, so install from apt.llvm.org. llvm.sh runs
+          # apt-get update/install internally; it inherits the network bounds in
+          # /etc/apt/apt.conf.d/99csvg-ci written by the harden-apt step above.
+          wget --timeout=30 --tries=3 -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh "$LLVM_MAJOR"
           # clang-cl ships in clang-tools-<ver>; llvm-<ver> provides llvm-lib/llvm-rc
-          sudo apt-get install -y "clang-tools-$LLVM_MAJOR" "lld-$LLVM_MAJOR" "llvm-$LLVM_MAJOR"
+          sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y "clang-tools-$LLVM_MAJOR" "lld-$LLVM_MAJOR" "llvm-$LLVM_MAJOR"
 
       - name: Verify MSVC-style LLVM tools (Windows cross-compilation)
         if: matrix.rid == 'win-x64'
