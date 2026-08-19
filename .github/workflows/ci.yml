@@ -33,6 +33,7 @@ jobs:
           Acquire::http::Timeout "30";
           Acquire::https::Timeout "30";
           Acquire::ForceIPv4 "true";
+          Dpkg::Lock::Timeout "120";
           EOF
           for i in 1 2 3; do
             sudo timeout 120 apt-get update && break
