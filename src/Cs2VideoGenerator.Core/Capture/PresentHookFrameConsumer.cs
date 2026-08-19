@@ -58,6 +58,7 @@ internal sealed partial class PresentHookFrameConsumer : IFrameStreamConsumer
     private long _bytesConsumed;
     private int _disposed;
     private long _framesConsumed;
+    private Task? _runTask;
     private int _started;
 
     /// <summary>
@@ -119,7 +120,7 @@ internal sealed partial class PresentHookFrameConsumer : IFrameStreamConsumer
         CancellationToken linked = CancellationTokenSource
             .CreateLinkedTokenSource(cancellationToken, _cts.Token).Token;
 
-        _ = Task.Run(() => RunAsync(linked), CancellationToken.None);
+        _runTask = Task.Run(() => RunAsync(linked), CancellationToken.None);
     }
 
     /// <inheritdoc />
@@ -142,11 +143,19 @@ internal sealed partial class PresentHookFrameConsumer : IFrameStreamConsumer
 
         try
         {
-            await Completion.ConfigureAwait(false);
+            // Await the run loop itself, not just Completion. Completion is signalled inside
+            // RunAsync before its finally closes the sink, so awaiting Completion can return
+            // with the sink still open (a race the disposal contract must not expose - the
+            // closed sink is what ends the encode). Awaiting the run task guarantees
+            // CloseSink() has run.
+            if (_runTask is not null)
+            {
+                await _runTask.ConfigureAwait(false);
+            }
         }
         catch
         {
-            // Completion never faults; belt and braces.
+            // RunAsync records failures via Complete rather than throwing; belt and braces.
         }
 
         _cts.Dispose();
