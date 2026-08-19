@@ -1,15 +1,20 @@
 # Tag-triggered release: push a vX.Y.Z tag and this workflow builds the native plugins
 # (same reusable workflow as CI), gates on native-asset completeness, runs the test
-# suite, packs the NuGet packages, pushes them to this repo's GitHub Packages NuGet
-# feed (using the built-in GITHUB_TOKEN — no nuget.org key required), publishes
-# self-contained CLI archives, and creates a GitHub Release whose body is the CHANGELOG
-# section for that version, with the nupkg/snupkg + CLI archives attached.
+# suite, packs the NuGet packages, publishes them to NuGet.org via Trusted Publishing
+# (OIDC — no stored API key), publishes self-contained CLI archives, and creates a
+# GitHub Release whose body is the CHANGELOG section for that version, with the
+# nupkg/snupkg + CLI archives attached.
+#
+# NuGet.org Trusted Publishing — one-time setup (see docs/RELEASING.md):
+#   * On NuGet.org, add a Trusted Publishing policy under account 'sid2934' bound to
+#     repository CS2OpenDev/CS2VideoGenerator and workflow file release.yml (this file).
+# The account name is set on the NuGet/login step below; no API key is stored anywhere.
 #
 # The full release process (including the version.json prerequisite this workflow
 # enforces) is documented in docs/RELEASING.md.
 #
 # workflow_dispatch is a dry run: it produces the complete artifact set (uploaded as a
-# workflow artifact) but skips the GitHub Packages push and the GitHub Release.
+# workflow artifact) but skips the NuGet.org push and the GitHub Release.
 name: Release
 
 on:
@@ -35,10 +40,11 @@ jobs:
     needs: [cpp-build]
     runs-on: ubuntu-latest
     permissions:
-      # contents: create the GitHub Release. packages: push to the GitHub Packages
-      # NuGet feed with the built-in GITHUB_TOKEN. Everything else stays read-only.
+      # contents: create the GitHub Release. id-token: mint the short-lived OIDC token
+      # that NuGet.org Trusted Publishing exchanges for a temporary push key — no
+      # long-lived nuget.org API key is stored. Everything else stays read-only.
       contents: write
-      packages: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -165,20 +171,28 @@ jobs:
             --only 'Cs2VideoGenerator' --only 'csvg(\.exe)?$' \
             --only 'mock_server' --only 'server\.(so|dll)$'
 
-      # Dry runs (workflow_dispatch) stop here: the full artifact set is uploaded at
-      # the end of the job but nothing is pushed or released.
+      # Dry runs (workflow_dispatch) stop before this: the full artifact set is uploaded
+      # at the end of the job but nothing is pushed or released.
       #
-      # Push to this repo's GitHub Packages NuGet feed using the built-in GITHUB_TOKEN
-      # (no nuget.org key). GitHub Packages' service index advertises no symbol endpoint,
-      # so the client pushes only the .nupkg; the .snupkg rides along on the GitHub
-      # Release below. The package is linked to this repo via the csproj RepositoryUrl.
-      # --skip-duplicate keeps re-runs idempotent.
-      - name: Push to GitHub Packages
+      # Publish to NuGet.org via Trusted Publishing. NuGet/login exchanges this job's
+      # OIDC token (id-token: write) for a short-lived API key — nothing is stored — as
+      # authorized by the Trusted Publishing policy on NuGet.org for this repo + this
+      # workflow file. dotnet nuget push uploads each .nupkg and automatically uploads
+      # the sibling .snupkg (symbols) to nuget.org's symbol server. --skip-duplicate
+      # keeps re-runs idempotent.
+      - name: Log in to NuGet.org (Trusted Publishing)
+        if: github.event_name == 'push'
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: sid2934
+
+      - name: Push to NuGet.org
         if: github.event_name == 'push'
         run: |
           dotnet nuget push "artifacts/packages/*.nupkg" \
-            --api-key "${{ secrets.GITHUB_TOKEN }}" \
-            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --source "https://api.nuget.org/v3/index.json" \
             --skip-duplicate
 
       - name: Create GitHub Release

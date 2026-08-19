@@ -32,26 +32,20 @@ To control demo playback, CSVG temporarily modifies your CS2 installation for th
 
 ## Installation
 
-CSVG is distributed from this repository. Its NuGet packages go to this repo's GitHub
-Packages feed, not nuget.org, and every release also attaches ready-to-run archives to its
-GitHub Release.
+CSVG is published to [NuGet.org](https://www.nuget.org/packages/Cs2VideoGenerator.Cli), and
+every release also attaches ready-to-run archives to its GitHub Release.
 
 ### Self-contained archive (recommended, no .NET runtime required)
 
 Download `csvg-<version>-win-x64.zip` or `csvg-<version>-linux-x64.tar.gz` from the
 [GitHub Releases page](https://github.com/CS2OpenDev/CS2VideoGenerator/releases), extract it, and run the bundled `csvg` executable. No authentication or .NET install required.
 
-### As a dotnet tool (from the GitHub Packages feed)
+### As a dotnet tool (from NuGet.org)
 
-The tool package lives in this repo's **private** GitHub Packages feed, so installing it
-requires a GitHub Personal Access Token (classic) with the `read:packages` scope
-(GitHub Packages requires auth even for reads):
+Install the `csvg` command from NuGet.org — no authentication required:
 
 ```bash
-dotnet tool install -g Cs2VideoGenerator.Cli \
-  --add-source "https://nuget.pkg.github.com/CS2OpenDev/index.json"
-# When prompted (or via a configured source) authenticate with your GitHub username
-# and a PAT that has read:packages. See docs/RELEASING.md for adding the source.
+dotnet tool install -g Cs2VideoGenerator.Cli
 csvg <command> [options]
 ```
 
@@ -492,7 +486,7 @@ See [Mock CS2 Mode](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/do
 
 ## Using Core as a Library
 
-`Cs2VideoGenerator.Core` can be consumed as a NuGet package without the CLI, either from this repo's GitHub Packages feed (see [Installation](#installation) for the feed source + `read:packages` PAT) or by referencing the `.nupkg` attached to a [GitHub Release](https://github.com/CS2OpenDev/CS2VideoGenerator/releases) from a local source.
+`Cs2VideoGenerator.Core` can be consumed as a NuGet package without the CLI, either from [NuGet.org](https://www.nuget.org/packages/Cs2VideoGenerator.Core) or by referencing the `.nupkg` attached to a [GitHub Release](https://github.com/CS2OpenDev/CS2VideoGenerator/releases) from a local source.
 
 One piece of wiring is mandatory. The CS2 plugin (and the mock server) connect **back** to a gRPC server hosted by *your* process, so your host must map `Cs2GameService` on an HTTP/2 endpoint at the configured port (`Cs2VideoGenerator:GrpcPort`, default `50051`). A plain console host without this wiring cannot run sessions: `StartAsync` detects the missing endpoint before launching CS2 and fails fast with an explanatory `InvalidOperationException`.
 

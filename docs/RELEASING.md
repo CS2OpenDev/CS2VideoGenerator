@@ -3,15 +3,18 @@
 Releases are cut by pushing a `vX.Y.Z` tag. The [release workflow](../.github/workflows/release.yml)
 takes it from there: it builds the native plugins (via the same reusable workflow CI uses),
 asserts the native-asset set is complete, runs the test suite, then packs the NuGet packages
-(`Cs2VideoGenerator.Core` and the `Cs2VideoGenerator.Cli` dotnet tool) and pushes them to this
-repo's [GitHub Packages](https://github.com/CS2OpenDev/CS2VideoGenerator/packages) NuGet feed. It
-also publishes self-contained CLI archives (`csvg-<version>-win-x64.zip`,
-`csvg-<version>-linux-x64.tar.gz`) and creates a GitHub Release whose body is the CHANGELOG
-section for that version, with the nupkg/snupkg and CLI archives attached.
+(`Cs2VideoGenerator.Core` and the `Cs2VideoGenerator.Cli` dotnet tool) and publishes them to
+[NuGet.org](https://www.nuget.org/packages/Cs2VideoGenerator.Cli). It also publishes
+self-contained CLI archives (`csvg-<version>-win-x64.zip`, `csvg-<version>-linux-x64.tar.gz`)
+and creates a GitHub Release whose body is the CHANGELOG section for that version, with the
+nupkg/snupkg and CLI archives attached.
 
-The packages are **not** published to nuget.org — distribution is entirely via this repository
-(GitHub Packages feed + GitHub Release assets). The push uses the built-in `GITHUB_TOKEN`, so
-there is no nuget.org API key and no repository secret to set up.
+Publishing uses **NuGet.org Trusted Publishing** (OIDC): the workflow's `id-token` is exchanged
+for a short-lived push key via the `NuGet/login` action, so there is no nuget.org API key or
+repository secret to store. One-time setup: on NuGet.org (account `sid2934`) add a Trusted
+Publishing policy bound to repository `CS2OpenDev/CS2VideoGenerator` and workflow file
+`release.yml`. On the first successful push the (currently unclaimed) package IDs are created
+under that account.
 
 ## Versioning model
 
@@ -59,24 +62,25 @@ can never collide with a published release.
    git push origin vX.Y.Z
    ```
 
-   The workflow does the rest. It pushes to GitHub Packages with the built-in `GITHUB_TOKEN`
-   (the workflow grants it `packages: write`), so there is no repository secret to configure.
-   Pushes use `--skip-duplicate`, so re-running the workflow after a partial failure is safe.
+   The workflow does the rest. It publishes to NuGet.org via Trusted Publishing (the workflow
+   grants itself `id-token: write` and mints a short-lived key — no repository secret to
+   configure). Pushes use `--skip-duplicate`, so re-running the workflow after a partial
+   failure is safe.
 
    The last step before anything is published scans every packed artifact for absolute build
    paths and fails the release if it finds one — so a package can never ship the build
    machine's directory layout again. See `docs/build-path-privacy.md`.
 
 5. **Check the results:** the GitHub Release (nupkg/snupkg + CLI archives attached, changelog
-   body) and the package versions under the repo's
-   [Packages](https://github.com/CS2OpenDev/CS2VideoGenerator/packages).
+   body) and the published package versions on
+   [NuGet.org](https://www.nuget.org/packages/Cs2VideoGenerator.Cli).
 
 ## Dry run
 
 Trigger the release workflow manually (`workflow_dispatch` on the Actions tab, or
 `gh workflow run release.yml`). A manual run builds and uploads the complete artifact set
 (NuGet packages + CLI archives, as the `release-artifacts` workflow artifact) but skips the
-GitHub Packages push and the GitHub Release.
+NuGet.org push and the GitHub Release.
 
 Off-tag dry runs from a branch that is **not** a public-release ref produce prerelease-suffixed
 versions, and warn that no matching CHANGELOG section exists — both expected. Dispatching from
@@ -86,34 +90,23 @@ public-release ref.
 ## What ships where
 
 Both nupkgs — `Cs2VideoGenerator.Core` and the `Cs2VideoGenerator.Cli` dotnet tool, which
-provides the `csvg` command — go to the GitHub Packages feed and are attached to the GitHub
-Release. The `Core` snupkg (symbols) is attached to the Release only, because GitHub Packages
-has no symbol endpoint. The CLI archives are Release-only too: `csvg-<version>-win-x64.zip` and
+provides the `csvg` command — are published to NuGet.org and also attached to the GitHub
+Release. The `Core` snupkg (symbols) is published to NuGet.org's symbol server (and rides along
+on the Release). The CLI archives are Release-only: `csvg-<version>-win-x64.zip` and
 `csvg-<version>-linux-x64.tar.gz`, self-contained, no .NET runtime required.
 
-## Consuming the packages (GitHub Packages)
+## Consuming the packages
 
-The packages live in this repository's **private** GitHub Packages feed, and GitHub Packages
-requires auth even for reads. Consuming them takes a GitHub Personal Access Token (classic)
-with the `read:packages` scope. Add the feed as a NuGet source:
-
-```bash
-dotnet nuget add source "https://nuget.pkg.github.com/CS2OpenDev/index.json" \
-  --name github-csvg \
-  --username <your-github-username> \
-  --password <PAT-with-read:packages> \
-  --store-password-in-clear-text
-```
-
-Then reference `Cs2VideoGenerator.Core` as usual, or install the CLI tool from that source:
+The packages are on NuGet.org, so no source configuration or authentication is needed. Install
+the CLI tool:
 
 ```bash
-dotnet tool install -g Cs2VideoGenerator.Cli --add-source "https://nuget.pkg.github.com/CS2OpenDev/index.json"
+dotnet tool install -g Cs2VideoGenerator.Cli
 ```
 
-If configuring the feed isn't worth it, every release also attaches the raw `.nupkg` (and the
-self-contained CLI archives) to its **GitHub Release** — download those directly, no
-authentication required.
+Or reference `Cs2VideoGenerator.Core` as a normal NuGet dependency. Every release also attaches
+the raw `.nupkg` and the self-contained CLI archives to its **GitHub Release** for direct
+download.
 
 The CLI archives are self-contained **folder** archives (a `csvg` executable next to its
 support files), not single-file bundles: `Cs2VideoGenerator.Core`'s `NativeAssetProvider`
