@@ -184,6 +184,8 @@ This one needs osxcross.
    # Or download from https://releases.llvm.org/
    ```
 
+On a Windows host, CMakeLists.txt builds vcpkg ports under `<repo>/.vcpkg-bt` rather than `external/vcpkg/buildtrees`. gRPC's generated sources sit 181 characters below the buildtrees root, and `cl.exe` can't open paths past `MAX_PATH` (260) even with `LongPathsEnabled` set, so the default root limits the clone path to about 15 characters while `.vcpkg-bt` allows about 68. The option is appended to any `-DVCPKG_INSTALL_OPTIONS` you pass, unless you give your own `--x-buildtrees-root`. See [troubleshooting](#8-cannot-open-source-file-under-vcpkg-bt-or-buildtrees-windows).
+
 ### macOS (Build Host)
 
 #### For Native macOS Builds
@@ -420,12 +422,14 @@ cmake --preset cross-windows-x64 && cmake --build --preset cross-windows-x64 --p
 
 **Error**: `error: while checking out baseline from commit '...', failed to git show versions/baseline.json`
 
-**Solution**: The `builtin-baseline` in `vcpkg.json` must match the vcpkg submodule commit. Update them together:
+**Cause**: vcpkg resolves every port version from the `builtin-baseline` commit in `vcpkg.json`, so that commit has to exist in the `external/vcpkg` submodule. The submodule may be ahead of the baseline: bumping it picks up newer vcpkg scripts and tooling while the ports stay on the same versions. A shallow clone (`--depth 1`, as CI uses) then doesn't contain the baseline commit.
+
+**Solution**: Fetch the baseline commit into the submodule:
 ```bash
 cd external/vcpkg
-git rev-parse HEAD
-# Copy this hash to vcpkg.json "builtin-baseline" field
+git fetch --depth=1 origin <builtin-baseline from vcpkg.json>
 ```
+CI does the same thing in the `.github/actions/vcpkg-baseline` composite action. Don't move `builtin-baseline` to fix this error. Moving it changes every dependency version, so do that only as a deliberate upgrade.
 
 #### 2. xwin not found (Windows cross-compilation)
 
@@ -495,6 +499,31 @@ If you only need mock_server, skip the plugin explicitly instead:
 ```bash
 cmake --preset <preset> -DCSVG_SKIP_SERVER_PLUGIN=ON
 ```
+
+#### 7. MSYS2 download 404 (native Windows)
+
+**Error**: `https://mirror.msys2.org/msys/x86_64/msys2-runtime-<version>-x86_64.pkg.tar.zst: failed: status code 404`, while building `zlib` or another port that runs `vcpkg_fixup_pkgconfig`.
+
+**Cause**: vcpkg pins exact MSYS2 package versions in `scripts/cmake/vcpkg_acquire_msys.cmake`, and MSYS2 removes old versions from its mirrors. A vcpkg checkout that has fallen far enough behind requests packages that no longer exist. Machines that already downloaded them into `external/vcpkg/downloads`, and Linux hosts (which use the system `pkg-config`), never see this.
+
+**Solution**: Bump the `external/vcpkg` submodule to a vcpkg release whose MSYS2 URLs still resolve. `builtin-baseline` can stay where it is (see [entry 1](#1-vcpkg-baseline-mismatch)). To unblock a build before then, point vcpkg at any existing `pkg-config.exe`. vcpkg clears the environment for port builds on Windows, so the variable must also be listed in `VCPKG_KEEP_ENV_VARS`:
+```powershell
+$env:PKG_CONFIG = 'C:\path\to\pkg-config.exe'
+$env:VCPKG_KEEP_ENV_VARS = 'PKG_CONFIG'
+cmake --preset release
+```
+
+#### 8. "Cannot open source file" under .vcpkg-bt or buildtrees (Windows)
+
+**Error**: `c1: fatal error C1083: Cannot open source file: '...\upb-gen\envoy\...upb_minitable.c': No such file or directory`, for a file that exists.
+
+**Cause**: The path is longer than `MAX_PATH`. `cl.exe` isn't long-path aware, so `LongPathsEnabled` doesn't help.
+
+**Solution**: Buildtrees already go to `<repo>/.vcpkg-bt` on Windows, so keep the clone path under about 68 characters; moving the clone somewhere shorter is the preferred fix. An explicit root also works:
+```powershell
+cmake --preset release "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=C:/b"
+```
+A root outside both the repo and your user profile isn't covered by any `/pathmap` in `cmake/path-privacy.cmake`, so its paths end up in the binaries. Don't ship anything built that way.
 
 ### Getting Help
 
