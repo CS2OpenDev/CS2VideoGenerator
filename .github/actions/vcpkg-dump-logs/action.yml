@@ -1,0 +1,32 @@
+# Composite action: prints the tails of recent vcpkg buildtree logs.
+#
+# vcpkg writes the real compiler errors to buildtree log files that never reach the job
+# output; surface them so failures are diagnosable from the UI. Call it with
+# `if: failure()`.
+#
+# Used by build-native-plugins.yml and native-windows.yml.
+name: Dump vcpkg failure logs
+description: Print the tails of vcpkg buildtree logs modified in the last 3 hours
+
+inputs:
+  buildtrees-root:
+    description: vcpkg buildtrees directory to search
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Dump vcpkg failure logs
+      shell: bash
+      env:
+        BUILDTREES: ${{ inputs.buildtrees-root }}
+      run: |
+        echo "Tails of vcpkg buildtree logs modified in the last 3h:"
+        found=0
+        while IFS= read -r f; do
+          found=1
+          echo "::group::${f}"
+          tail -n 120 "$f"
+          echo "::endgroup::"
+        done < <(find "$BUILDTREES" -maxdepth 2 -name '*.log' -mmin -180 2>/dev/null | head -20)
+        [ "$found" = "1" ] || echo "(no recent vcpkg logs found)"

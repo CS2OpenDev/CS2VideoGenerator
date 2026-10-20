@@ -165,6 +165,7 @@ root of anything it reports, so a failure does not itself republish the path.
 | Where | What it covers |
 |---|---|
 | `ci.yml` → `path-privacy` | the committed macOS prebuilt |
+| `native-windows.yml` | a native MSVC `release`-preset build (not shipped; it keeps `/pathmap` honest) |
 | `build-native-plugins.yml` | each RID's freshly built natives (`.pdb`/`.lib` exempt — build-tree only, never packaged) |
 | `release.yml` | the packed `.nupkg`s and the CLI archives, before anything is pushed |
 | `refresh-macos-mock.sh` | the macOS mock, before staging |

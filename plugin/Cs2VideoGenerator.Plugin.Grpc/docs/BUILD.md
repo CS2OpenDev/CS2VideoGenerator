@@ -23,8 +23,8 @@ CMake 3.20+ drives the build and carries the presets, vcpkg supplies gRPC and pr
 
 |               | win-x64 | linux-x64 | linux-arm64 | osx-arm64 |
 | ------------- | ------- | --------- | ----------- | --------- |
-| **win-x64**   | untested ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested |
-| **linux-x64** | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([GCC](#for-native-linux-builds)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested ([osxcross](#for-macos-cross-compilation-from-linux)) |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested |
+| **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested ([osxcross](#for-macos-cross-compilation-from-linux)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works (native) |
 
 ### server_plugin (server.dll / server.so)
@@ -33,8 +33,8 @@ Built only when the target is win-x64 or linux-x64, since CS2 only officially su
 
 |               | win-x64 | linux-x64 |
 | ------------- | ------- | --------- |
-| **win-x64**   | untested ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) |
-| **linux-x64** | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([GCC](#for-native-linux-builds)) |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) |
+| **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) ¹ |
 
 ¹ Requires the HL2SDK linux-x64 tier libraries (`external/hl2sdk/lib/linux64/`: `tier1.a` + the `libtier0.so` stub) to produce server_plugin. On server-plugin targets (win-x64, linux-x64), a missing HL2SDK submodule or missing tier libraries is a configure-time **FATAL_ERROR**; pass `-DCSVG_SKIP_SERVER_PLUGIN=ON` to explicitly skip the server plugin (mock_server still builds).
@@ -185,6 +185,8 @@ This one needs osxcross.
    ```
 
 On a Windows host, CMakeLists.txt builds vcpkg ports under `<repo>/.vcpkg-bt` rather than `external/vcpkg/buildtrees`. gRPC's generated sources sit 181 characters below the buildtrees root, and `cl.exe` can't open paths past `MAX_PATH` (260) even with `LongPathsEnabled` set, so the default root limits the clone path to about 15 characters while `.vcpkg-bt` allows about 68. The option is appended to any `-DVCPKG_INSTALL_OPTIONS` you pass, unless you give your own `--x-buildtrees-root`. See [troubleshooting](#8-cannot-open-source-file-under-vcpkg-bt-or-buildtrees-windows).
+
+Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on any PR that touches the plugin, but releases still ship the clang-cl cross-build.
 
 ### macOS (Build Host)
 

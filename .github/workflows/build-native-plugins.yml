@@ -182,21 +182,11 @@ jobs:
         working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
         run: cmake --build --preset ${{ matrix.preset }} --parallel
 
-      # vcpkg writes the real compiler errors to buildtree log files that never
-      # reach the job output; surface them so failures are diagnosable from the UI.
       - name: Dump vcpkg failure logs
         if: failure()
-        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
-        run: |
-          echo "Tails of vcpkg buildtree logs modified in the last 3h:"
-          found=0
-          while IFS= read -r f; do
-            found=1
-            echo "::group::${f}"
-            tail -n 120 "$f"
-            echo "::endgroup::"
-          done < <(find external/vcpkg/buildtrees -maxdepth 2 -name '*.log' -mmin -180 2>/dev/null | head -20)
-          [ "$found" = "1" ] || echo "(no recent vcpkg logs found)"
+        uses: ./.github/actions/vcpkg-dump-logs
+        with:
+          buildtrees-root: plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/buildtrees
 
       # __FILE__ expansions in gRPC/abseil/OpenSSL would otherwise bake this runner's
       # absolute paths into every shipped binary. cmake/path-privacy.cmake maps them
