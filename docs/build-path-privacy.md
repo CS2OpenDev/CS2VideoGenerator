@@ -157,9 +157,10 @@ If that ever stops being worth it, the alternative is a `macos-14` leg in
 ## 4. The gate
 
 `.github/scripts/check-embedded-paths.py` scans bytes for `/Users/`, `/home/`, `/root/`
-and `C:\Users\`, expanding `.nupkg`/`.zip`/`.tar.gz` so it can be pointed at a packed
-package. It redacts the user component of anything it reports, so a failure does not
-itself republish the path.
+and `C:\Users\`, plus the root of the checkout it runs from (both separators, both cases),
+which catches a clone outside any home directory. It expands `.nupkg`/`.zip`/`.tar.gz`
+so it can be pointed at a packed package. It redacts the user component and the checkout
+root of anything it reports, so a failure does not itself republish the path.
 
 | Where | What it covers |
 |---|---|
