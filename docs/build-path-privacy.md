@@ -54,11 +54,17 @@ matter:
   triplet keeps its copy as a fallback.
 - `clang-cl` **silently ignores** a bare `-ffile-prefix-map`: `warning: unknown argument
   ignored in clang-cl`, exit status unchanged. Forward it as
-  `/clang:-ffile-prefix-map=…`, or the win-x64 leg looks fixed and is not. Native MSVC
-  uses `/pathmap:`.
+  `/clang:-ffile-prefix-map=…`, or the win-x64 leg looks fixed and is not.
+- Native MSVC's `/pathmap:` is ignored too unless `/experimental:deterministic` is also
+  passed (`warning D9007`, which vcpkg's port logs hide). Until 0.10.0 every native
+  `release`-preset build embedded the clone's absolute path roughly 400 times per binary;
+  the gate below didn't notice because the clone wasn't under a home directory.
+  Deterministic mode also applies the maps to the `/Fd` compile-PDB path, so `/Zi` fails
+  with `C1090`; the project compiles with `/Z7` instead, as vcpkg's ports already do.
 - Overlapping maps resolve differently per compiler. Measured: GCC 13 honours the *last*
-  matching map, Clang the *longest*. Listing the broad `$HOME` catch-all first and the
-  specific repo root last is correct under both rules.
+  matching map, Clang the *longest*, MSVC 19.44 the *first*. Listing the broad `$HOME`
+  catch-all first and the specific repo root last is correct for GCC and Clang;
+  `path-privacy.cmake` reverses the list for MSVC.
 
 The `$HOME` catch-all is what covers tool caches outside the checkout, notably the xwin
 Windows SDK splat (`~/.xwin-cache` locally, `~/.xwin` on CI).
@@ -102,7 +108,7 @@ not exist on a user's machine. The build-tree RPATH is disabled.
 
 ### 2.5 Recorded PDB paths — linker flag and MSBuild property
 
-Native: `/Zi` records the PDB's absolute path in the image's CodeView entry. The `.pdb` is
+Native: `/DEBUG` records the PDB's absolute path in the image's CodeView entry. The `.pdb` is
 not packaged, but the string ships inside `server.dll`/`mock_server.exe`.
 `/PDBALTPATH:%_PDB%` reduces it to the bare filename.
 

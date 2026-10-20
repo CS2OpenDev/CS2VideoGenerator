@@ -222,10 +222,18 @@ set(CMAKE_CXX_EXTENSIONS OFF) # Disable compiler-specific extensions
 # the server_plugin shared library, which fails to link on Linux without -fPIC.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Enable debug info in release builds
+# Enable debug info in release builds. /Z7 (debug info in each object) rather than /Zi:
+# the /experimental:deterministic that path-privacy.cmake passes to cl.exe makes /pathmap
+# rewrite the /Fd compile-PDB path too, so /Zi tries to write its PDB under /csvg and
+# fails with C1090. The linker still writes the .pdb for /DEBUG. CMake's own Debug and
+# RelWithDebInfo defaults carry /Zi, hence the replace.
 if(MSVC)
-    add_compile_options(/Zi)
+    add_compile_options(/Z7)
     add_link_options(/DEBUG)
+    foreach(_csvg_flags_var IN ITEMS CMAKE_C_FLAGS_DEBUG CMAKE_CXX_FLAGS_DEBUG
+                                     CMAKE_C_FLAGS_RELWITHDEBINFO CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        string(REPLACE "/Zi" "/Z7" ${_csvg_flags_var} "${${_csvg_flags_var}}")
+    endforeach()
 endif()
 
 # Path privacy for our own translation units. The vcpkg triplets carry the same maps
