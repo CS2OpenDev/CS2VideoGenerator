@@ -88,6 +88,13 @@ jobs:
           done
           sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y ${{ matrix.packages }}
 
+      # Fetches builtin-baseline into the depth-1 submodule and outputs the submodule
+      # commit for the cache key below.
+      - name: Prepare vcpkg baseline
+        id: vcpkg
+        timeout-minutes: 10
+        uses: ./.github/actions/vcpkg-baseline
+
       # vcpkg's x-gha binary-cache provider stopped working after GitHub's cache
       # service v2 migration (ACTIONS_CACHE_URL is no longer exposed; runs showed
       # "Stored binaries in 0 destinations"). Cache the file-based provider dir
@@ -97,7 +104,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/vcpkg-cache
-          key: vcpkg-bin-${{ matrix.rid }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
+          key: vcpkg-bin-${{ matrix.rid }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
           restore-keys: |
             vcpkg-bin-${{ matrix.rid }}-
 
