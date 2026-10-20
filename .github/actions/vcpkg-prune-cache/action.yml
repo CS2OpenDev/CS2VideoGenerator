@@ -1,0 +1,46 @@
+# Composite action: deletes vcpkg binary-cache archives the current build didn't use.
+#
+# The files provider never deletes anything, and a new actions/cache key restores the
+# previous entry through restore-keys, so without this every vcpkg bump or dependency
+# change would carry the old ABIs forward and the cache would only grow. Archives live
+# at <cache>/<abi[0:2]>/<abi>.zip; keep the ones this build's vcpkg status file lists.
+# Run it only when the cache will be saved (an exact key hit never saves).
+#
+# Used by build-native-plugins.yml and native-windows.yml.
+name: Prune vcpkg binary cache
+description: Remove binary-cache archives whose ABI this build did not install
+
+inputs:
+  cache-dir:
+    description: Directory of the vcpkg files binary-cache provider
+    required: true
+  binary-dir:
+    description: CMake binary directory of the build (holds vcpkg_installed/)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prune stale vcpkg binary cache entries
+      shell: bash
+      env:
+        CACHE_DIR: ${{ inputs.cache-dir }}
+        STATUS_FILE: ${{ inputs.binary-dir }}/vcpkg_installed/vcpkg/status
+      run: |
+        cache=$CACHE_DIR
+        if command -v cygpath >/dev/null 2>&1; then cache=$(cygpath -u "$cache"); fi
+        if [ ! -s "$STATUS_FILE" ]; then
+          echo "::warning::$STATUS_FILE not found; leaving the cache unpruned"
+          exit 0
+        fi
+        keep=$(mktemp)
+        sed -n 's/^Abi: *//p' "$STATUS_FILE" | tr -d '\r' | sort -u > "$keep"
+        echo "keeping $(wc -l < "$keep") archive(s) installed by this build"
+        find "$cache" -name '*.zip' | while read -r zip; do
+          abi=$(basename "$zip" .zip)
+          if ! grep -qxF "$abi" "$keep"; then
+            echo "pruning $abi"
+            rm -f "$zip"
+          fi
+        done
+        du -sh "$cache"

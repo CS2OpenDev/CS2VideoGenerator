@@ -100,6 +100,7 @@ jobs:
       # "Stored binaries in 0 destinations"). Cache the file-based provider dir
       # (the workflow-level VCPKG_BINARY_SOURCES default) with actions/cache instead.
       - name: Cache vcpkg binary packages
+        id: vcpkg-cache
         if: env.ACT != 'true'
         uses: actions/cache@v4
         with:
@@ -181,6 +182,16 @@ jobs:
       - name: Build
         working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
         run: cmake --build --preset ${{ matrix.preset }} --parallel
+
+      # Without this the cache only grows: restore-keys carries the previous entry's
+      # ABIs into every new key. Only when the post step will save (an exact hit never
+      # does).
+      - name: Prune stale vcpkg binary cache entries
+        if: env.ACT != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vcpkg-prune-cache
+        with:
+          cache-dir: /tmp/vcpkg-cache
+          binary-dir: artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/${{ matrix.preset }}
 
       - name: Dump vcpkg failure logs
         if: failure()
