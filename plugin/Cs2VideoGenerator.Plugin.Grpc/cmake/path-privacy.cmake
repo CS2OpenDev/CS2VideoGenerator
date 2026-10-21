@@ -13,7 +13,8 @@
 #
 # ORDERING RULE (measured, not assumed): with overlapping prefixes, GCC 13 honours the
 # LAST matching map while Clang honours the LONGEST. Listing the broad catch-all first
-# and the specific root last is correct under both.
+# and the specific root last is correct under both. MSVC honours the FIRST, so its
+# spelling below reverses the list.
 #
 # A vcpkg checkout outside the repo (VCPKG_ROOT) is covered by the $HOME map when it
 # lives under the home directory; a system-wide one (e.g. /opt/vcpkg) discloses nothing
@@ -29,40 +30,70 @@
 # worktree, where the worktree path -- not the main checkout -- is what gets baked in.
 get_filename_component(CSVG_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 
+# On Windows, use USERPROFILE: vcpkg clears HOME for port builds but keeps USERPROFILE,
+# and a shell's HOME (MSYS2's /home/<user>, a custom C:\home) need not match it, so this
+# is the only choice that gives the configure step and every port the same map.
+if(CMAKE_HOST_WIN32)
+    set(_csvg_home "$ENV{USERPROFILE}")
+else()
+    set(_csvg_home "$ENV{HOME}")
+endif()
+file(TO_CMAKE_PATH "${_csvg_home}" _csvg_home)
+
 # A prefix containing a space cannot be passed through the flag strings vcpkg splits on
 # whitespace; skip it rather than emit a broken flag that fails obscurely later.
 set(_csvg_maps "")
-if(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "" AND NOT "$ENV{HOME}" MATCHES " ")
-    list(APPEND _csvg_maps "$ENV{HOME}=/csvg-home")
+set(_csvg_unmapped "")
+if(_csvg_home MATCHES " ")
+    list(APPEND _csvg_unmapped "${_csvg_home}")
+elseif(NOT _csvg_home STREQUAL "")
+    list(APPEND _csvg_maps "${_csvg_home}=/csvg-home")
 endif()
-if(NOT CSVG_REPO_ROOT MATCHES " ")
+if(CSVG_REPO_ROOT MATCHES " ")
+    list(APPEND _csvg_unmapped "${CSVG_REPO_ROOT}")
+else()
     list(APPEND _csvg_maps "${CSVG_REPO_ROOT}=/csvg")
+endif()
+
+# Files the triplets add to vcpkg's ABI hash (see csvg_apply_path_privacy_flags). The
+# hash covers this file's text, not the paths computed above, so a build that had to
+# skip a map also hashes a marker file: its ports embed absolute paths and must not be
+# restored into a build that maps them.
+set(CSVG_PATH_PRIVACY_HASH_FILES "${CMAKE_CURRENT_LIST_DIR}/path-privacy.cmake")
+if(_csvg_unmapped)
+    list(APPEND CSVG_PATH_PRIVACY_HASH_FILES "${CMAKE_CURRENT_LIST_DIR}/path-privacy-unmapped.txt")
+    message(WARNING "Path privacy: not mapping ${_csvg_unmapped} (contains a space); "
+                    "binaries built here embed that path. Fine for local use, not for shipping.")
 endif()
 
 # Three spellings of the same maps:
 #   GNU      - clang/apple-clang/gcc, and clang driving the OpenSSL cross build
 #   CLANG_CL - clang-cl SILENTLY IGNORES a bare -ffile-prefix-map ("unknown argument
 #              ignored in clang-cl"); it must be forwarded with /clang:
-#   MSVC     - native cl.exe. UNVERIFIED: there is no native-MSVC leg today (win-x64
-#              cross-compiles with clang-cl), and MSVC documents a single /pathmap:
-#              taking ';'-separated pairs rather than a repeated flag. Emitted as
-#              separate flags here because a ';' inside VCPKG_C_FLAGS would be re-split
-#              as a CMake list. If a native Windows leg is ever added, check this against
-#              a real build: should MSVC honour only the last flag, the repo-root map is
-#              deliberately last, so the common case still maps. The release gate is the
-#              backstop either way.
+#   MSVC     - native cl.exe. /pathmap: is SILENTLY IGNORED (warning D9007, which
+#              vcpkg's port logs swallow) unless /experimental:deterministic is also
+#              passed. Measured on MSVC 19.44: matching ignores case and slash
+#              direction, repeated flags all apply, ';' does NOT separate pairs inside
+#              one flag, and with overlapping prefixes the FIRST matching map wins - the
+#              opposite of GCC - so the maps are emitted in reverse order.
+#              /experimental:deterministic also turns __DATE__/__TIME__ into warning
+#              C5048, which only matters to a port built with /WX.
 set(CSVG_PATH_MAP_GNU "")
 set(CSVG_PATH_MAP_CLANG_CL "")
-set(CSVG_PATH_MAP_MSVC "")
+set(CSVG_PATH_MAP_MSVC "/experimental:deterministic")
 set(CSVG_PATH_MAP_GNU_LIST "")
 set(CSVG_PATH_MAP_CLANG_CL_LIST "")
-set(CSVG_PATH_MAP_MSVC_LIST "")
+set(CSVG_PATH_MAP_MSVC_LIST "/experimental:deterministic")
 foreach(_csvg_map IN LISTS _csvg_maps)
     string(APPEND CSVG_PATH_MAP_GNU " -ffile-prefix-map=${_csvg_map}")
     string(APPEND CSVG_PATH_MAP_CLANG_CL " /clang:-ffile-prefix-map=${_csvg_map}")
-    string(APPEND CSVG_PATH_MAP_MSVC " /pathmap:${_csvg_map}")
     list(APPEND CSVG_PATH_MAP_GNU_LIST "-ffile-prefix-map=${_csvg_map}")
     list(APPEND CSVG_PATH_MAP_CLANG_CL_LIST "/clang:-ffile-prefix-map=${_csvg_map}")
+endforeach()
+set(_csvg_maps_reversed ${_csvg_maps})
+list(REVERSE _csvg_maps_reversed)
+foreach(_csvg_map IN LISTS _csvg_maps_reversed)
+    string(APPEND CSVG_PATH_MAP_MSVC " /pathmap:${_csvg_map}")
     list(APPEND CSVG_PATH_MAP_MSVC_LIST "/pathmap:${_csvg_map}")
 endforeach()
 string(STRIP "${CSVG_PATH_MAP_GNU}" CSVG_PATH_MAP_GNU)
@@ -70,11 +101,15 @@ string(STRIP "${CSVG_PATH_MAP_CLANG_CL}" CSVG_PATH_MAP_CLANG_CL)
 string(STRIP "${CSVG_PATH_MAP_MSVC}" CSVG_PATH_MAP_MSVC)
 
 # Appends the right spelling to VCPKG_C_FLAGS/VCPKG_CXX_FLAGS for a triplet. Appends
-# (never assigns): the Linux triplets already carry -fPIC in these variables.
+# (never assigns): the Linux triplets already carry -fPIC in these variables. Also adds
+# this file to VCPKG_HASH_ADDITIONAL_FILES: vcpkg hashes the triplet file but not what it
+# include()s, so without it a change to the maps would keep reusing ports built with the
+# old ones.
 #   csvg_apply_path_privacy_flags(GNU|CLANG_CL|MSVC)
 macro(csvg_apply_path_privacy_flags _csvg_flavor)
     set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS} ${CSVG_PATH_MAP_${_csvg_flavor}}")
     set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} ${CSVG_PATH_MAP_${_csvg_flavor}}")
     string(STRIP "${VCPKG_C_FLAGS}" VCPKG_C_FLAGS)
     string(STRIP "${VCPKG_CXX_FLAGS}" VCPKG_CXX_FLAGS)
+    list(APPEND VCPKG_HASH_ADDITIONAL_FILES ${CSVG_PATH_PRIVACY_HASH_FILES})
 endmacro()

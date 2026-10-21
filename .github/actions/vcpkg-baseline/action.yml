@@ -1,0 +1,44 @@
+# Composite action: makes vcpkg.json's builtin-baseline commit available in the vcpkg
+# submodule and reports the submodule commit for cache keys.
+#
+# The submodule can be newer than builtin-baseline (scripts bumped, port versions held).
+# A depth-1 checkout only has the submodule commit, and vcpkg reads
+# versions/baseline.json and every port tree from the baseline commit, so fetch that one
+# commit too. Bounded and retried like the apt steps: a wedged connection would
+# otherwise hold the job until its 6h timeout.
+#
+# Used by build-native-plugins.yml and native-windows.yml.
+name: Prepare vcpkg baseline
+description: Fetch the vcpkg builtin-baseline commit and output the submodule commit
+
+outputs:
+  sha:
+    description: Commit the vcpkg submodule is checked out at
+    value: ${{ steps.rev.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch vcpkg builtin-baseline commit
+      shell: bash
+      run: |
+        baseline=$(jq -er '."builtin-baseline"' plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json)
+        vcpkg_dir=plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg
+        if git -C "$vcpkg_dir" cat-file -e "$baseline^{commit}" 2>/dev/null; then
+          echo "builtin-baseline $baseline is already checked out"
+          exit 0
+        fi
+        for i in 1 2 3; do
+          timeout -k 15 120 git -C "$vcpkg_dir" fetch --depth=1 origin "$baseline" && exit 0
+          echo "baseline fetch attempt $i failed or timed out; retrying in 15s" >&2
+          sleep 15
+        done
+        exit 1
+
+    # hashFiles() can't see a submodule bump (.gitmodules doesn't change), and an exact
+    # key hit means actions/cache never saves. Without the vcpkg commit in the key, a
+    # bump would leave every later run rebuilding the whole tree from source.
+    - name: Resolve vcpkg submodule commit
+      id: rev
+      shell: bash
+      run: echo "sha=$(git -C plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"

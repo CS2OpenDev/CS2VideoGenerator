@@ -23,8 +23,8 @@ CMake 3.20+ drives the build and carries the presets, vcpkg supplies gRPC and pr
 
 |               | win-x64 | linux-x64 | linux-arm64 | osx-arm64 |
 | ------------- | ------- | --------- | ----------- | --------- |
-| **win-x64**   | untested ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested |
-| **linux-x64** | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([GCC](#for-native-linux-builds)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested ([osxcross](#for-macos-cross-compilation-from-linux)) |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested |
+| **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested ([osxcross](#for-macos-cross-compilation-from-linux)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works (native) |
 
 ### server_plugin (server.dll / server.so)
@@ -33,8 +33,8 @@ Built only when the target is win-x64 or linux-x64, since CS2 only officially su
 
 |               | win-x64 | linux-x64 |
 | ------------- | ------- | --------- |
-| **win-x64**   | untested ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) |
-| **linux-x64** | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([GCC](#for-native-linux-builds)) |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) |
+| **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) ¹ |
 
 ¹ Requires the HL2SDK linux-x64 tier libraries (`external/hl2sdk/lib/linux64/`: `tier1.a` + the `libtier0.so` stub) to produce server_plugin. On server-plugin targets (win-x64, linux-x64), a missing HL2SDK submodule or missing tier libraries is a configure-time **FATAL_ERROR**; pass `-DCSVG_SKIP_SERVER_PLUGIN=ON` to explicitly skip the server plugin (mock_server still builds).
@@ -183,6 +183,10 @@ This one needs osxcross.
    
    # Or download from https://releases.llvm.org/
    ```
+
+On a Windows host, CMakeLists.txt builds vcpkg ports under `<repo>/.vcpkg-bt` rather than `external/vcpkg/buildtrees`. gRPC's generated sources sit 181 characters below the buildtrees root, and `cl.exe` can't open paths past `MAX_PATH` (260) even with `LongPathsEnabled` set, so the default root limits the clone path to about 15 characters while `.vcpkg-bt` allows about 68. The option is appended to any `-DVCPKG_INSTALL_OPTIONS` you pass, unless you give your own `--x-buildtrees-root`. See [troubleshooting](#8-cannot-open-source-file-under-vcpkg-bt-or-buildtrees-windows).
+
+Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on pushes to `main` that touch the plugin, weekly, and on manual dispatch (not on pull requests), but releases still ship the clang-cl cross-build.
 
 ### macOS (Build Host)
 
@@ -420,12 +424,14 @@ cmake --preset cross-windows-x64 && cmake --build --preset cross-windows-x64 --p
 
 **Error**: `error: while checking out baseline from commit '...', failed to git show versions/baseline.json`
 
-**Solution**: The `builtin-baseline` in `vcpkg.json` must match the vcpkg submodule commit. Update them together:
+**Cause**: vcpkg resolves every port version from the `builtin-baseline` commit in `vcpkg.json`, so that commit has to exist in the `external/vcpkg` submodule. The submodule may be ahead of the baseline: bumping it picks up newer vcpkg scripts and tooling while the ports stay on the same versions. A shallow clone (`--depth 1`, as CI uses) then doesn't contain the baseline commit.
+
+**Solution**: Fetch the baseline commit into the submodule:
 ```bash
 cd external/vcpkg
-git rev-parse HEAD
-# Copy this hash to vcpkg.json "builtin-baseline" field
+git fetch --depth=1 origin <builtin-baseline from vcpkg.json>
 ```
+CI does the same thing in the `.github/actions/vcpkg-baseline` composite action. Don't move `builtin-baseline` to fix this error. Moving it changes every dependency version, so do that only as a deliberate upgrade.
 
 #### 2. xwin not found (Windows cross-compilation)
 
@@ -495,6 +501,31 @@ If you only need mock_server, skip the plugin explicitly instead:
 ```bash
 cmake --preset <preset> -DCSVG_SKIP_SERVER_PLUGIN=ON
 ```
+
+#### 7. MSYS2 download 404 (native Windows)
+
+**Error**: `https://mirror.msys2.org/msys/x86_64/msys2-runtime-<version>-x86_64.pkg.tar.zst: failed: status code 404`, while building `zlib` or another port that runs `vcpkg_fixup_pkgconfig`.
+
+**Cause**: vcpkg pins exact MSYS2 package versions in `scripts/cmake/vcpkg_acquire_msys.cmake`, and MSYS2 removes old versions from its mirrors. A vcpkg checkout that has fallen far enough behind requests packages that no longer exist. Machines that already downloaded them into `external/vcpkg/downloads`, and Linux hosts (which use the system `pkg-config`), never see this.
+
+**Solution**: Bump the `external/vcpkg` submodule to a vcpkg release whose MSYS2 URLs still resolve. `builtin-baseline` can stay where it is (see [entry 1](#1-vcpkg-baseline-mismatch)). To unblock a build before then, point vcpkg at any existing `pkg-config.exe`. vcpkg clears the environment for port builds on Windows, so the variable must also be listed in `VCPKG_KEEP_ENV_VARS`:
+```powershell
+$env:PKG_CONFIG = 'C:\path\to\pkg-config.exe'
+$env:VCPKG_KEEP_ENV_VARS = 'PKG_CONFIG'
+cmake --preset release
+```
+
+#### 8. "Cannot open source file" under .vcpkg-bt or buildtrees (Windows)
+
+**Error**: `c1: fatal error C1083: Cannot open source file: '...\upb-gen\envoy\...upb_minitable.c': No such file or directory`, for a file that exists.
+
+**Cause**: The path is longer than `MAX_PATH`. `cl.exe` isn't long-path aware, so `LongPathsEnabled` doesn't help.
+
+**Solution**: Buildtrees already go to `<repo>/.vcpkg-bt` on Windows, so keep the clone path under about 68 characters; moving the clone somewhere shorter is the preferred fix. An explicit root also works:
+```powershell
+cmake --preset release "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=C:/b"
+```
+A root outside both the repo and your user profile isn't covered by any `/pathmap` in `cmake/path-privacy.cmake`, so its paths end up in the binaries. Don't ship anything built that way.
 
 ### Getting Help
 

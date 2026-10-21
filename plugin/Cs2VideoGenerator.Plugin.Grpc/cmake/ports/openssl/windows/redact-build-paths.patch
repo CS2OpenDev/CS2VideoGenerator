@@ -1,0 +1,28 @@
+diff --git a/Configurations/windows-makefile.tmpl b/Configurations/windows-makefile.tmpl
+index f1b3cd3..2a636be 100644
+--- a/Configurations/windows-makefile.tmpl
++++ b/Configurations/windows-makefile.tmpl
+@@ -341,11 +341,20 @@ LIB_CPPFLAGS={- our $lib_cppflags =
+                                @{$config{shared_includes}}),
+                           @{$config{lib_cppflags}},
+                           @{$config{shared_cppflag}});
++                # vcpkg overlay port (Cs2VideoGenerator): the directories COMPILED
++                # INTO libcrypto, decoupled from the install paths above. vcpkg passes
++                # --prefix/--openssldir as absolute paths inside its packages tree, so
++                # the stock defines bake the build machine's layout into every binary.
++                # These are OpenSSL's own defaults for an unconfigured build (admin-only
++                # locations; the fallbacks cover vcpkg clearing the environment). The
++                # engine/module dirs are inert with a static no-module build.
++                our $csvg_installroot = $win_installroot || 'C:\\Program Files';
++                our $csvg_commonroot = $win_commonroot || 'C:\\Program Files\\Common Files';
+                 join(' ', $lib_cppflags,
+                           (map { '-D'.quotify1($_) }
+-                               "OPENSSLDIR=\"$openssldir\"",
+-                               "ENGINESDIR=\"$enginesdir\"",
+-                               "MODULESDIR=\"$modulesdir\""),
++                               "OPENSSLDIR=\"$csvg_commonroot\\SSL\"",
++                               "ENGINESDIR=\"$csvg_installroot\\OpenSSL\\lib\\engines-$sover_dirname\"",
++                               "MODULESDIR=\"$csvg_installroot\\OpenSSL\\lib\\ossl-modules\""),
+                           '$(CNF_CPPFLAGS)', '$(CPPFLAGS)') -}
+ LIB_CFLAGS={- join(' ', $target{lib_cflags} || (),
+                         $target{shared_cflag} || (),

@@ -1,0 +1,6 @@
+Marker for vcpkg's ABI hash. cmake/path-privacy.cmake adds this file to
+VCPKG_HASH_ADDITIONAL_FILES when it had to skip a path map (a home directory or
+checkout path containing a space). Ports built that way embed absolute paths, so
+they get a different ABI from ports built with every map applied and are never
+restored into such a build. The contents don't matter; the file's presence in the
+hash does.

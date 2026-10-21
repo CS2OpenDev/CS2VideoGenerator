@@ -40,6 +40,33 @@ NEEDLES: tuple[bytes, ...] = (
     b"c:\\users\\",
 )
 
+# The checkout this script runs from. The roots above miss a clone outside any home
+# directory (C:\dev\..., /opt/...), and native MSVC records __FILE__ with backslashes,
+# so look for the repo's own root too: either separator, any case (Windows paths can
+# show up with a lowercased drive letter and nothing else changed).
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def repo_root_needles(root: str) -> tuple[bytes, ...]:
+    """Lowercased spellings of root plus a separator, matched against lowercased data.
+
+    Kept even when a NEEDLES entry is a substring (a clone under C:\\Users\\...): those
+    match case-sensitively, so c:\\Users\\... would slip past them. A root with fewer
+    than two components (/src, /work, C:/repo) is skipped: it is generic enough to turn
+    up inside unrelated paths, including the mapped /csvg/src/... ones, and would fail
+    clean builds.
+    """
+    forward = root.replace("\\", "/").rstrip("/").lower()
+    components = [part for part in forward.split("/") if part and not part.endswith(":")]
+    if len(components) < 2:
+        return ()
+    backward = forward.replace("/", "\\")
+    spellings = sorted({forward + "/", forward + "\\", backward + "\\", backward + "/"})
+    return tuple(spelling.encode("utf-8", "surrogateescape") for spelling in spellings)
+
+
+ROOT_NEEDLES = repo_root_needles(REPO_ROOT)
+
 ARCHIVE_SUFFIXES = (".nupkg", ".snupkg", ".zip", ".tar.gz", ".tgz")
 
 # Files whose bytes were actually read, archive members included. Used to reject a run
@@ -57,6 +84,8 @@ def redact(sample: bytes) -> str:
     /Users/alice/Development/x -> /Users/***/Development/x
     """
     text = sample.decode("latin1")
+    for needle in ROOT_NEEDLES:
+        text = re.sub(re.escape(needle.decode("latin1")[:-1]), "<repo>", text, flags=re.IGNORECASE)
     return re.sub(
         r"(?i)((?:/Users/|/home/|C:\\Users\\))([^/\\]+)",
         lambda m: m.group(1) + "***",
@@ -64,23 +93,34 @@ def redact(sample: bytes) -> str:
     )
 
 
-def scan_bytes(data: bytes) -> dict[bytes, list[str]]:
-    """Return {needle: [redacted samples]} for every needle present in data."""
-    hits: dict[bytes, list[str]] = {}
-    for needle in NEEDLES:
-        start = data.find(needle)
+def scan_bytes(data: bytes) -> dict[bytes, tuple[int, list[str]]]:
+    """Return {needle: (count, [redacted samples])} for every needle present in data."""
+    hits: dict[bytes, tuple[int, list[str]]] = {}
+    lowered = data.lower() if ROOT_NEEDLES else data
+    for needle in NEEDLES + ROOT_NEEDLES:
+        # Root needles are lowercase and searched case-insensitively; offsets line up
+        # because bytes.lower() only touches ASCII letters.
+        haystack = lowered if needle in ROOT_NEEDLES else data
+        start = haystack.find(needle)
         if start < 0:
             continue
         samples: list[str] = []
         seen: set[str] = set()
         while start >= 0 and len(samples) < 3:
-            match = SAMPLE_RE.match(data, start)
-            sample = redact(match.group(0) if match else needle)
+            if needle in ROOT_NEEDLES:
+                # Replace the root by position rather than by pattern: SAMPLE_RE stops at
+                # whitespace and 120 bytes, so a root with a space or a long one would only
+                # be partly captured and then printed unredacted.
+                rest = SAMPLE_RE.match(data, start + len(needle) - 1)
+                sample = "<repo>" + redact(rest.group(0) if rest else b"")
+            else:
+                match = SAMPLE_RE.match(data, start)
+                sample = redact(match.group(0) if match else needle)
             if sample not in seen:
                 seen.add(sample)
                 samples.append(sample)
-            start = data.find(needle, start + len(needle))
-        hits[needle] = samples
+            start = haystack.find(needle, start + len(needle))
+        hits[needle] = (haystack.count(needle), samples)
     return hits
 
 
@@ -167,9 +207,9 @@ def check_file(
             print(f"  ok    {label}")
         return 0
 
-    for needle, samples in hits.items():
-        count = data.count(needle)
-        print(f"  LEAK  {label}: {count}x {needle.decode('latin1')}")
+    for needle, (count, samples) in hits.items():
+        shown = "<repo>" if needle in ROOT_NEEDLES else needle.decode("latin1")
+        print(f"  LEAK  {label}: {count}x {shown}")
         for sample in samples:
             print(f"          {sample}")
     return len(hits)

@@ -40,6 +40,17 @@ if(NOT DEFINED VCPKG_TARGET_TRIPLET)
     endif()
 endif()
 
+# Native Windows: build vcpkg ports under <repo>/.vcpkg-bt. gRPC's generated sources sit
+# 181 characters below the buildtrees root, and the default root inside external/vcpkg
+# pushes any clone deeper than ~15 characters past MAX_PATH, which cl.exe can't open
+# (C1083) even with LongPathsEnabled. Appended rather than preset so that passing your
+# own -DVCPKG_INSTALL_OPTIONS doesn't silently drop it; vcpkg.cmake writes the result
+# back to the cache. An explicit --x-buildtrees-root wins.
+if(CMAKE_HOST_WIN32 AND NOT VCPKG_INSTALL_OPTIONS MATCHES "--x-buildtrees-root")
+    get_filename_component(_CSVG_BUILDTREES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.vcpkg-bt" ABSOLUTE)
+    list(APPEND VCPKG_INSTALL_OPTIONS "--x-buildtrees-root=${_CSVG_BUILDTREES_ROOT}")
+endif()
+
 # Derive the CSVG plugin version from the repository's version.json (the same
 # source Nerdbank.GitVersioning uses for the .NET packages) so the plugin binary
 # reports a version comparable to the orchestrator's. Falls back to 0.0.0 if the
@@ -211,10 +222,18 @@ set(CMAKE_CXX_EXTENSIONS OFF) # Disable compiler-specific extensions
 # the server_plugin shared library, which fails to link on Linux without -fPIC.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Enable debug info in release builds
+# Enable debug info in release builds. /Z7 (debug info in each object) rather than /Zi:
+# the /experimental:deterministic that path-privacy.cmake passes to cl.exe makes /pathmap
+# rewrite the /Fd compile-PDB path too, so /Zi tries to write its PDB under /csvg and
+# fails with C1090. The linker still writes the .pdb for /DEBUG. CMake's own Debug and
+# RelWithDebInfo defaults carry /Zi, hence the replace.
 if(MSVC)
-    add_compile_options(/Zi)
+    add_compile_options(/Z7)
     add_link_options(/DEBUG)
+    foreach(_csvg_flags_var IN ITEMS CMAKE_C_FLAGS_DEBUG CMAKE_CXX_FLAGS_DEBUG
+                                     CMAKE_C_FLAGS_RELWITHDEBINFO CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        string(REPLACE "/Zi" "/Z7" ${_csvg_flags_var} "${${_csvg_flags_var}}")
+    endforeach()
 endif()
 
 # Path privacy for our own translation units. The vcpkg triplets carry the same maps

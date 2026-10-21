@@ -88,16 +88,24 @@ jobs:
           done
           sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y ${{ matrix.packages }}
 
+      # Fetches builtin-baseline into the depth-1 submodule and outputs the submodule
+      # commit for the cache key below.
+      - name: Prepare vcpkg baseline
+        id: vcpkg
+        timeout-minutes: 10
+        uses: ./.github/actions/vcpkg-baseline
+
       # vcpkg's x-gha binary-cache provider stopped working after GitHub's cache
       # service v2 migration (ACTIONS_CACHE_URL is no longer exposed; runs showed
       # "Stored binaries in 0 destinations"). Cache the file-based provider dir
       # (the workflow-level VCPKG_BINARY_SOURCES default) with actions/cache instead.
       - name: Cache vcpkg binary packages
+        id: vcpkg-cache
         if: env.ACT != 'true'
         uses: actions/cache@v4
         with:
           path: /tmp/vcpkg-cache
-          key: vcpkg-bin-${{ matrix.rid }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
+          key: vcpkg-bin-${{ matrix.rid }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/path-privacy.cmake', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
           restore-keys: |
             vcpkg-bin-${{ matrix.rid }}-
 
@@ -164,8 +172,11 @@ jobs:
         run: |
           curl -fsSL "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar xzf - --strip-components=1 -C /usr/local/bin "xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl/xwin"
-          # --cache-dir is a global xwin option and must precede the subcommand
-          xwin --accept-license --cache-dir /tmp/xwin-cache splat --output "$HOME/.xwin"
+          # --cache-dir is a global xwin option and must precede the subcommand. It must
+          # sit on the same filesystem as --output: splat renames unpacked files into
+          # place, and with the cache in /tmp that fails with EXDEV (os error 18) on
+          # runners where /tmp is a separate mount.
+          xwin --accept-license --cache-dir "$HOME/.cache/xwin" splat --output "$HOME/.xwin"
 
       - name: Configure CMake
         working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
@@ -175,21 +186,21 @@ jobs:
         working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
         run: cmake --build --preset ${{ matrix.preset }} --parallel
 
-      # vcpkg writes the real compiler errors to buildtree log files that never
-      # reach the job output; surface them so failures are diagnosable from the UI.
+      # Without this the cache only grows: restore-keys carries the previous entry's
+      # ABIs into every new key. Only when the post step will save (an exact hit never
+      # does).
+      - name: Prune stale vcpkg binary cache entries
+        if: env.ACT != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vcpkg-prune-cache
+        with:
+          cache-dir: /tmp/vcpkg-cache
+          binary-dir: artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/${{ matrix.preset }}
+
       - name: Dump vcpkg failure logs
         if: failure()
-        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
-        run: |
-          echo "Tails of vcpkg buildtree logs modified in the last 3h:"
-          found=0
-          while IFS= read -r f; do
-            found=1
-            echo "::group::${f}"
-            tail -n 120 "$f"
-            echo "::endgroup::"
-          done < <(find external/vcpkg/buildtrees -maxdepth 2 -name '*.log' -mmin -180 2>/dev/null | head -20)
-          [ "$found" = "1" ] || echo "(no recent vcpkg logs found)"
+        uses: ./.github/actions/vcpkg-dump-logs
+        with:
+          buildtrees-root: plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/buildtrees
 
       # __FILE__ expansions in gRPC/abseil/OpenSSL would otherwise bake this runner's
       # absolute paths into every shipped binary. cmake/path-privacy.cmake maps them

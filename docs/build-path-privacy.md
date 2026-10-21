@@ -44,7 +44,12 @@ matter:
 - vcpkg ports build in their own CMake process, so `add_compile_options()` in our
   `CMakeLists.txt` never reaches them. The maps have to come from the triplet
   (`VCPKG_C_FLAGS`/`VCPKG_CXX_FLAGS`), which is why every triplet in `cmake/triplets/`
-  includes `path-privacy.cmake`.
+  includes `path-privacy.cmake`. vcpkg's ABI hash covers the triplet file but not what it
+  `include()`s, so `csvg_apply_path_privacy_flags` also adds `path-privacy.cmake` to
+  `VCPKG_HASH_ADDITIONAL_FILES`; otherwise changing the maps would keep reusing cached
+  ports built with the old ones. A build that had to skip a map (a path with a space)
+  hashes `path-privacy-unmapped.txt` as well, so its leaky ports never share an ABI with
+  mapped ones.
 - …and the triplet is not enough where a chainload toolchain is in play.
   `VCPKG_CHAINLOAD_TOOLCHAIN_FILE` *replaces* vcpkg's own toolchain, which is the thing
   that would otherwise append `VCPKG_*_FLAGS` — the same trap that forces `/MT` and
@@ -54,11 +59,17 @@ matter:
   triplet keeps its copy as a fallback.
 - `clang-cl` **silently ignores** a bare `-ffile-prefix-map`: `warning: unknown argument
   ignored in clang-cl`, exit status unchanged. Forward it as
-  `/clang:-ffile-prefix-map=…`, or the win-x64 leg looks fixed and is not. Native MSVC
-  uses `/pathmap:`.
+  `/clang:-ffile-prefix-map=…`, or the win-x64 leg looks fixed and is not.
+- Native MSVC's `/pathmap:` is ignored too unless `/experimental:deterministic` is also
+  passed (`warning D9007`, which vcpkg's port logs hide). Until 0.10.0 every native
+  `release`-preset build embedded the clone's absolute path roughly 400 times per binary;
+  the gate below didn't notice because the clone wasn't under a home directory.
+  Deterministic mode also applies the maps to the `/Fd` compile-PDB path, so `/Zi` fails
+  with `C1090`; the project compiles with `/Z7` instead, as vcpkg's ports already do.
 - Overlapping maps resolve differently per compiler. Measured: GCC 13 honours the *last*
-  matching map, Clang the *longest*. Listing the broad `$HOME` catch-all first and the
-  specific repo root last is correct under both rules.
+  matching map, Clang the *longest*, MSVC 19.44 the *first*. Listing the broad `$HOME`
+  catch-all first and the specific repo root last is correct for GCC and Clang;
+  `path-privacy.cmake` reverses the list for MSVC.
 
 The `$HOME` catch-all is what covers tool caches outside the checkout, notably the xwin
 Windows SDK splat (`~/.xwin-cache` locally, `~/.xwin` on CI).
@@ -75,6 +86,14 @@ absolute `--prefix`, so **no compiler flag removes them**:
 `cmake/ports/openssl/unix/redact-build-paths.patch` decouples the compiled-in values from
 the install prefix. They are inert here: OpenSSL is linked statically with
 `no-shared`/`no-module`, so nothing is ever loaded from either directory.
+
+A native MSVC build uses the nmake template instead, and vcpkg's Windows portfile also
+passes `--openssldir` inside its packages tree, so `OPENSSLDIR` leaks there too.
+`cmake/ports/openssl/windows/redact-build-paths.patch` compiles in OpenSSL's own defaults
+for an unconfigured Windows build (`C:\Program Files\Common Files\SSL`,
+`C:\Program Files\OpenSSL\lib\…`). Unlike the provider directories, `OPENSSLDIR` is read
+at run time (it is where `openssl.cnf` is looked up), which is why it points at an
+admin-only location rather than an arbitrary path.
 
 ### 2.3 OpenSSL's `buildinf.h` — the fix that leaked the fix
 
@@ -102,7 +121,7 @@ not exist on a user's machine. The build-tree RPATH is disabled.
 
 ### 2.5 Recorded PDB paths — linker flag and MSBuild property
 
-Native: `/Zi` records the PDB's absolute path in the image's CodeView entry. The `.pdb` is
+Native: `/DEBUG` records the PDB's absolute path in the image's CodeView entry. The `.pdb` is
 not packaged, but the string ships inside `server.dll`/`mock_server.exe`.
 `/PDBALTPATH:%_PDB%` reduces it to the bare filename.
 
@@ -151,13 +170,15 @@ If that ever stops being worth it, the alternative is a `macos-14` leg in
 ## 4. The gate
 
 `.github/scripts/check-embedded-paths.py` scans bytes for `/Users/`, `/home/`, `/root/`
-and `C:\Users\`, expanding `.nupkg`/`.zip`/`.tar.gz` so it can be pointed at a packed
-package. It redacts the user component of anything it reports, so a failure does not
-itself republish the path.
+and `C:\Users\`, plus the root of the checkout it runs from (both separators, both cases),
+which catches a clone outside any home directory. It expands `.nupkg`/`.zip`/`.tar.gz`
+so it can be pointed at a packed package. It redacts the user component and the checkout
+root of anything it reports, so a failure does not itself republish the path.
 
 | Where | What it covers |
 |---|---|
 | `ci.yml` → `path-privacy` | the committed macOS prebuilt |
+| `native-windows.yml` | a native MSVC `release`-preset build (not shipped; it keeps `/pathmap` honest) |
 | `build-native-plugins.yml` | each RID's freshly built natives (`.pdb`/`.lib` exempt — build-tree only, never packaged) |
 | `release.yml` | the packed `.nupkg`s and the CLI archives, before anything is pushed |
 | `refresh-macos-mock.sh` | the macOS mock, before staging |

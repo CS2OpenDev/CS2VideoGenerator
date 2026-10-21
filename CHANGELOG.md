@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-10-20
+
+### Fixed
+
+- **Capture:** `PresentHookFrameConsumer.DisposeAsync` now waits for the run loop, so
+  disposal no longer returns while the encoder's stdin is still open.
+- **Native Windows plugin build:** a fresh clone builds again with the `debug`/`release`
+  presets. vcpkg ports build under `<repo>/.vcpkg-bt`, which keeps gRPC's generated
+  sources under `MAX_PATH` for clone paths up to about 68 characters, and the vcpkg
+  submodule moved to 2026.06.24 because MSYS2 removed the `msys2-runtime` package the old
+  checkout asked for. Dependency versions are unchanged (`builtin-baseline` stays put).
+- **Path privacy on native MSVC:** `/pathmap:` was silently ignored without
+  `/experimental:deterministic`, so locally built `server.dll`/`mock_server.exe`
+  embedded the clone's absolute path. The flag is now passed and the maps are ordered for
+  MSVC's first-match rule; the plugin's own sources compile with `/Z7`, because
+  deterministic mode also remaps `/Zi`'s PDB path. OpenSSL's nmake build also compiled
+  vcpkg's install paths in as `OPENSSLDIR`/`ENGINESDIR`/`MODULESDIR`; the overlay port now
+  uses OpenSSL's stock Windows defaults. Released packages were not affected: they ship the clang-cl
+  cross-build.
+
+### Changed
+
+- CI builds the native MSVC preset (a separate `native-windows.yml`, on pushes to `main`,
+  weekly and on demand) and runs the path check on it.
+- The embedded-path check also looks for the checkout's own root, so a clone outside a
+  home directory can no longer pass it.
+- CI bounds `apt-get`, `llvm.sh` and the vcpkg baseline fetch so a wedged mirror can't
+  hang a build, keys the vcpkg binary cache on the submodule commit, and prunes ABIs the
+  build no longer uses before saving it.
+- The triplets add `path-privacy.cmake` to vcpkg's ABI hash, so changing the path maps
+  rebuilds the ports instead of reusing archives built with the old flags.
+
 ## [0.9.0] - 2026-08-18
 
 Initial public release.
@@ -60,4 +92,5 @@ compilation JSON.
   publishes them to **NuGet.org via Trusted Publishing** (OIDC — no stored API key), and
   creates the GitHub Release. See `docs/RELEASING.md`.
 
+[0.10.0]: https://github.com/CS2OpenDev/CS2VideoGenerator/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/CS2OpenDev/CS2VideoGenerator/releases/tag/v0.9.0

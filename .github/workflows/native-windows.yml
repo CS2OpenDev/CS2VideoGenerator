@@ -1,0 +1,124 @@
+# Builds the native MSVC `release` preset that developers use on Windows. Shipped win-x64
+# binaries are cross-compiled with clang-cl (build-native-plugins.yml), so without this
+# the buildtrees-root/MAX_PATH handling, the vcpkg/MSYS2 tooling, the /pathmap flags in
+# cmake/path-privacy.cmake and the OpenSSL nmake patch only ever ran on a maintainer's
+# machine. Nothing from this workflow ships, and releases don't wait on it.
+#
+# Its own workflow so it can be path-filtered: a Windows runner is billed at twice the
+# Linux rate and a cold-cache build takes over three hours, which docs-only or .NET-only
+# changes have no reason to pay for. For the same reason it doesn't run on pull requests
+# (caches saved on a PR branch aren't visible to the next PR, so most PR runs would be
+# cold); pushes to main, a weekly run and manual dispatch catch native regressions instead.
+name: Native Windows build
+
+on:
+  push:
+    branches: [main, 'v*/**']
+    paths:
+      - 'plugin/Cs2VideoGenerator.Plugin.Grpc/**'
+      - '!plugin/Cs2VideoGenerator.Plugin.Grpc/docs/**'
+      - '.github/actions/vcpkg-*/**'
+      - '.github/scripts/check-embedded-paths.py'
+      - '.github/workflows/native-windows.yml'
+      - '.gitmodules'
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cpp-native-windows:
+    name: Build C++ (win-x64, native MSVC)
+    runs-on: windows-2022
+    # A cold vcpkg cache builds every port from source, and the x64-windows host triplet
+    # builds debug and release: measured ~3h20m on this runner, gRPC alone ~2h. A job that
+    # times out never saves its cache, so the limit has to fit a cold build.
+    timeout-minutes: 330
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Prepare vcpkg baseline
+        id: vcpkg
+        timeout-minutes: 10
+        uses: ./.github/actions/vcpkg-baseline
+
+      - name: Point vcpkg at the cached binary dir
+        run: echo "VCPKG_BINARY_SOURCES=clear;files,$RUNNER_TEMP/vcpkg-cache,readwrite" >> "$GITHUB_ENV"
+
+      - name: Cache vcpkg binary packages
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: vcpkg-bin-win-x64-msvc-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/path-privacy.cmake', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
+          restore-keys: |
+            vcpkg-bin-win-x64-msvc-
+
+      # Source tarballs and the MSYS2/Perl/NASM/jom archives vcpkg fetches on Windows.
+      # Without this every run depends on those mirrors being up - the MSYS2 404 this
+      # job exists to catch would otherwise also be a CI outage. The broad restore-key
+      # matters most on a vcpkg bump, the change most likely to meet a mirror 404; the
+      # prune step below keeps it from growing forever. The extracted tools/ tree is
+      # rebuilt from the archives.
+      - name: Cache vcpkg downloads
+        id: downloads-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/downloads
+            !plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/downloads/tools
+            !plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/downloads/temp
+          key: vcpkg-downloads-win-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**') }}
+          restore-keys: |
+            vcpkg-downloads-win-${{ steps.vcpkg.outputs.sha }}-
+            vcpkg-downloads-win-
+
+      - name: Bootstrap vcpkg
+        run: ./plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure CMake
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: cmake --preset release
+
+      - name: Build
+        working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
+        run: cmake --build --preset release --parallel
+
+      - name: Dump vcpkg failure logs
+        if: failure()
+        uses: ./.github/actions/vcpkg-dump-logs
+        with:
+          buildtrees-root: .vcpkg-bt
+
+      # The checker also looks for this checkout's own root (D:\a\...), which is
+      # what an unmapped native MSVC build embeds.
+      - name: Check for embedded build paths
+        run: |
+          python .github/scripts/check-embedded-paths.py \
+            artifacts/build/Cs2VideoGenerator.Plugin.GRPC/Release/bin/win-x64 \
+            --allow '\.pdb$' --allow '\.lib$' --allow '\.exp$'
+
+      - name: Prune stale vcpkg binary cache entries
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vcpkg-prune-cache
+        with:
+          cache-dir: ${{ runner.temp }}/vcpkg-cache
+          binary-dir: artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/release
+
+      # vcpkg doesn't record which archives a build used, so age is the proxy: anything
+      # downloaded more than 60 days ago goes, and is fetched again once if still needed.
+      - name: Prune old vcpkg downloads
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        run: |
+          find plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/downloads -maxdepth 1 -type f -mtime +60 -print -delete
+          du -sh plugin/Cs2VideoGenerator.Plugin.Grpc/external/vcpkg/downloads
