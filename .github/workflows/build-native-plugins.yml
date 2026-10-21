@@ -172,8 +172,11 @@ jobs:
         run: |
           curl -fsSL "https://github.com/Jake-Shadle/xwin/releases/download/${XWIN_VERSION}/xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar xzf - --strip-components=1 -C /usr/local/bin "xwin-${XWIN_VERSION}-x86_64-unknown-linux-musl/xwin"
-          # --cache-dir is a global xwin option and must precede the subcommand
-          xwin --accept-license --cache-dir /tmp/xwin-cache splat --output "$HOME/.xwin"
+          # --cache-dir is a global xwin option and must precede the subcommand. It must
+          # sit on the same filesystem as --output: splat renames unpacked files into
+          # place, and with the cache in /tmp that fails with EXDEV (os error 18) on
+          # runners where /tmp is a separate mount.
+          xwin --accept-license --cache-dir "$HOME/.cache/xwin" splat --output "$HOME/.xwin"
 
       - name: Configure CMake
         working-directory: plugin/Cs2VideoGenerator.Plugin.Grpc
