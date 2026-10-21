@@ -37,7 +37,10 @@ jobs:
   cpp-native-windows:
     name: Build C++ (win-x64, native MSVC)
     runs-on: windows-2022
-    timeout-minutes: 180
+    # A cold vcpkg cache builds every port from source, and the x64-windows host triplet
+    # builds debug and release: measured ~3h20m on this runner, gRPC alone ~2h. A job that
+    # times out never saves its cache, so the limit has to fit a cold build.
+    timeout-minutes: 330
     defaults:
       run:
         shell: bash
