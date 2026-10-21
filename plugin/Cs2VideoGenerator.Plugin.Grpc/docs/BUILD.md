@@ -186,7 +186,7 @@ This one needs osxcross.
 
 On a Windows host, CMakeLists.txt builds vcpkg ports under `<repo>/.vcpkg-bt` rather than `external/vcpkg/buildtrees`. gRPC's generated sources sit 181 characters below the buildtrees root, and `cl.exe` can't open paths past `MAX_PATH` (260) even with `LongPathsEnabled` set, so the default root limits the clone path to about 15 characters while `.vcpkg-bt` allows about 68. The option is appended to any `-DVCPKG_INSTALL_OPTIONS` you pass, unless you give your own `--x-buildtrees-root`. See [troubleshooting](#8-cannot-open-source-file-under-vcpkg-bt-or-buildtrees-windows).
 
-Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on any PR that touches the plugin, but releases still ship the clang-cl cross-build.
+Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on pushes to `main` that touch the plugin, weekly, and on manual dispatch (not on pull requests), but releases still ship the clang-cl cross-build.
 
 ### macOS (Build Host)
 

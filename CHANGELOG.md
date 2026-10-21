@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- CI builds the native MSVC preset (a separate, path-filtered `native-windows.yml`) and
-  runs the path check on it.
+- CI builds the native MSVC preset (a separate `native-windows.yml`, on pushes to `main`,
+  weekly and on demand) and runs the path check on it.
 - The embedded-path check also looks for the checkout's own root, so a clone outside a
   home directory can no longer pass it.
 - CI bounds `apt-get`, `llvm.sh` and the vcpkg baseline fetch so a wedged mirror can't

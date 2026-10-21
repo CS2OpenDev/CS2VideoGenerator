@@ -5,8 +5,10 @@
 # machine. Nothing from this workflow ships, and releases don't wait on it.
 #
 # Its own workflow so it can be path-filtered: a Windows runner is billed at twice the
-# Linux rate and a cold-cache gRPC build takes over an hour, which docs-only or
-# .NET-only changes have no reason to pay for.
+# Linux rate and a cold-cache build takes over three hours, which docs-only or .NET-only
+# changes have no reason to pay for. For the same reason it doesn't run on pull requests
+# (caches saved on a PR branch aren't visible to the next PR, so most PR runs would be
+# cold); pushes to main, a weekly run and manual dispatch catch native regressions instead.
 name: Native Windows build
 
 on:
@@ -19,15 +21,8 @@ on:
       - '.github/scripts/check-embedded-paths.py'
       - '.github/workflows/native-windows.yml'
       - '.gitmodules'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'plugin/Cs2VideoGenerator.Plugin.Grpc/**'
-      - '!plugin/Cs2VideoGenerator.Plugin.Grpc/docs/**'
-      - '.github/actions/vcpkg-*/**'
-      - '.github/scripts/check-embedded-paths.py'
-      - '.github/workflows/native-windows.yml'
-      - '.gitmodules'
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch: {}
 
 permissions:
