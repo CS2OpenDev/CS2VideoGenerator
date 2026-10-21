@@ -31,3 +31,5 @@ endif()
 
 # Resolve the macOS SDK explicitly; see cmake/osx-sysroot.cmake for why that is necessary.
 include("${CMAKE_CURRENT_LIST_DIR}/../osx-sysroot.cmake")
+# vcpkg hashes the triplet file but not what it include()s.
+list(APPEND VCPKG_HASH_ADDITIONAL_FILES "${CMAKE_CURRENT_LIST_DIR}/../osx-sysroot.cmake")

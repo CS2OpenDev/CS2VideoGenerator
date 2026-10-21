@@ -43,11 +43,27 @@ file(TO_CMAKE_PATH "${_csvg_home}" _csvg_home)
 # A prefix containing a space cannot be passed through the flag strings vcpkg splits on
 # whitespace; skip it rather than emit a broken flag that fails obscurely later.
 set(_csvg_maps "")
-if(NOT _csvg_home STREQUAL "" AND NOT _csvg_home MATCHES " ")
+set(_csvg_unmapped "")
+if(_csvg_home MATCHES " ")
+    list(APPEND _csvg_unmapped "${_csvg_home}")
+elseif(NOT _csvg_home STREQUAL "")
     list(APPEND _csvg_maps "${_csvg_home}=/csvg-home")
 endif()
-if(NOT CSVG_REPO_ROOT MATCHES " ")
+if(CSVG_REPO_ROOT MATCHES " ")
+    list(APPEND _csvg_unmapped "${CSVG_REPO_ROOT}")
+else()
     list(APPEND _csvg_maps "${CSVG_REPO_ROOT}=/csvg")
+endif()
+
+# Files the triplets add to vcpkg's ABI hash (see csvg_apply_path_privacy_flags). The
+# hash covers this file's text, not the paths computed above, so a build that had to
+# skip a map also hashes a marker file: its ports embed absolute paths and must not be
+# restored into a build that maps them.
+set(CSVG_PATH_PRIVACY_HASH_FILES "${CMAKE_CURRENT_LIST_DIR}/path-privacy.cmake")
+if(_csvg_unmapped)
+    list(APPEND CSVG_PATH_PRIVACY_HASH_FILES "${CMAKE_CURRENT_LIST_DIR}/path-privacy-unmapped.txt")
+    message(WARNING "Path privacy: not mapping ${_csvg_unmapped} (contains a space); "
+                    "binaries built here embed that path. Fine for local use, not for shipping.")
 endif()
 
 # Three spellings of the same maps:
@@ -85,11 +101,15 @@ string(STRIP "${CSVG_PATH_MAP_CLANG_CL}" CSVG_PATH_MAP_CLANG_CL)
 string(STRIP "${CSVG_PATH_MAP_MSVC}" CSVG_PATH_MAP_MSVC)
 
 # Appends the right spelling to VCPKG_C_FLAGS/VCPKG_CXX_FLAGS for a triplet. Appends
-# (never assigns): the Linux triplets already carry -fPIC in these variables.
+# (never assigns): the Linux triplets already carry -fPIC in these variables. Also adds
+# this file to VCPKG_HASH_ADDITIONAL_FILES: vcpkg hashes the triplet file but not what it
+# include()s, so without it a change to the maps would keep reusing ports built with the
+# old ones.
 #   csvg_apply_path_privacy_flags(GNU|CLANG_CL|MSVC)
 macro(csvg_apply_path_privacy_flags _csvg_flavor)
     set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS} ${CSVG_PATH_MAP_${_csvg_flavor}}")
     set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} ${CSVG_PATH_MAP_${_csvg_flavor}}")
     string(STRIP "${VCPKG_C_FLAGS}" VCPKG_C_FLAGS)
     string(STRIP "${VCPKG_CXX_FLAGS}" VCPKG_CXX_FLAGS)
+    list(APPEND VCPKG_HASH_ADDITIONAL_FILES ${CSVG_PATH_PRIVACY_HASH_FILES})
 endmacro()

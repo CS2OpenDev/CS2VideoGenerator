@@ -105,7 +105,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/vcpkg-cache
-          key: vcpkg-bin-${{ matrix.rid }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
+          key: vcpkg-bin-${{ matrix.rid }}-${{ steps.vcpkg.outputs.sha }}-${{ hashFiles('plugin/Cs2VideoGenerator.Plugin.Grpc/vcpkg.json', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/triplets/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/toolchains/**', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/path-privacy.cmake', 'plugin/Cs2VideoGenerator.Plugin.Grpc/cmake/ports/**', '.gitmodules') }}
           restore-keys: |
             vcpkg-bin-${{ matrix.rid }}-
 

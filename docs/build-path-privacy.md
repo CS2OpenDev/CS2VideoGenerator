@@ -44,7 +44,12 @@ matter:
 - vcpkg ports build in their own CMake process, so `add_compile_options()` in our
   `CMakeLists.txt` never reaches them. The maps have to come from the triplet
   (`VCPKG_C_FLAGS`/`VCPKG_CXX_FLAGS`), which is why every triplet in `cmake/triplets/`
-  includes `path-privacy.cmake`.
+  includes `path-privacy.cmake`. vcpkg's ABI hash covers the triplet file but not what it
+  `include()`s, so `csvg_apply_path_privacy_flags` also adds `path-privacy.cmake` to
+  `VCPKG_HASH_ADDITIONAL_FILES`; otherwise changing the maps would keep reusing cached
+  ports built with the old ones. A build that had to skip a map (a path with a space)
+  hashes `path-privacy-unmapped.txt` as well, so its leaky ports never share an ABI with
+  mapped ones.
 - …and the triplet is not enough where a chainload toolchain is in play.
   `VCPKG_CHAINLOAD_TOOLCHAIN_FILE` *replaces* vcpkg's own toolchain, which is the thing
   that would otherwise append `VCPKG_*_FLAGS` — the same trap that forces `/MT` and
