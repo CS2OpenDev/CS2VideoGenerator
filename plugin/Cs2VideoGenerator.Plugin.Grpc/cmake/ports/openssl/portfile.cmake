@@ -28,6 +28,9 @@ vcpkg_from_github(
         # command line -- which contains the -ffile-prefix-map flags themselves, and so
         # re-introduces the very paths they exist to remove. See docs/build-path-privacy.md.
         unix/redact-build-paths.patch
+        # The same defines in the nmake template a native MSVC build uses, plus
+        # OPENSSLDIR, which that build also points into vcpkg's packages tree.
+        windows/redact-build-paths.patch
         unix/no-empty-dirs.patch
         unix/no-static-libs-for-shared.patch
 )

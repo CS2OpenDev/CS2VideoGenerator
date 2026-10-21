@@ -82,6 +82,14 @@ absolute `--prefix`, so **no compiler flag removes them**:
 the install prefix. They are inert here: OpenSSL is linked statically with
 `no-shared`/`no-module`, so nothing is ever loaded from either directory.
 
+A native MSVC build uses the nmake template instead, and vcpkg's Windows portfile also
+passes `--openssldir` inside its packages tree, so `OPENSSLDIR` leaks there too.
+`cmake/ports/openssl/windows/redact-build-paths.patch` compiles in OpenSSL's own defaults
+for an unconfigured Windows build (`C:\Program Files\Common Files\SSL`,
+`C:\Program Files\OpenSSL\lib\…`). Unlike the provider directories, `OPENSSLDIR` is read
+at run time (it is where `openssl.cnf` is looked up), which is why it points at an
+admin-only location rather than an arbitrary path.
+
 ### 2.3 OpenSSL's `buildinf.h` — the fix that leaked the fix
 
 `crypto/build.info` bakes the full build command line into the binary for
