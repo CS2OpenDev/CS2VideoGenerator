@@ -465,7 +465,8 @@ public sealed class DoctorTask(
     /// <summary>
     ///     Reports the selected capture provider and runs that provider's own checks. One case per
     ///     provider: each backend answers different questions (OBS: where is the executable; InEngine:
-    ///     is there an ffmpeg and somewhere to put six megabytes a frame), and a name no provider
+    ///     is there an ffmpeg and somewhere to put six megabytes a frame; InEngineHooked: the same, minus
+    ///     the frame files, plus Windows), and a name no provider
     ///     answers to is a failed check rather than a crash - though options validation rejects an
     ///     unknown name before the diagnostics run at all.
     /// </summary>
@@ -488,7 +489,13 @@ public sealed class DoctorTask(
                 break;
 
             case CaptureProviderNames.InEngine:
-                results.AddRange(await CheckInEngineCaptureConfigurationAsync(verbose, cancellationToken));
+                results.AddRange(await CheckInEngineCaptureConfigurationAsync(verbose, hooked: false,
+                    cancellationToken));
+                break;
+
+            case CaptureProviderNames.InEngineHooked:
+                results.AddRange(await CheckInEngineCaptureConfigurationAsync(verbose, hooked: true,
+                    cancellationToken));
                 break;
 
             default:
@@ -506,9 +513,14 @@ public sealed class DoctorTask(
     ///     The in-engine provider's own diagnostics. Leads with what has and has not been observed on
     ///     a machine running CS2, because that outranks every other row here: the checks below can
     ///     all pass on a provider whose remaining assumptions about <c>startmovie</c> are wrong.
+    ///     <paramref name="hooked" /> runs the same checks for <c>InEngineHooked</c>, which shares the
+    ///     <c>Capture:InEngine</c> configuration but takes frames from the plugin's present hook: the
+    ///     frame-file throughput row does not apply, and the platform and the plugin's
+    ///     <c>present-capture</c> capability do.
     /// </summary>
     private async Task<List<CheckResult>> CheckInEngineCaptureConfigurationAsync(
         bool verbose,
+        bool hooked,
         CancellationToken cancellationToken)
     {
         List<CheckResult> results = new();
@@ -578,7 +590,19 @@ public sealed class DoctorTask(
 
         results.AddRange(await CheckInEngineDirectoriesAsync(config, cancellationToken));
         results.Add(await CheckInEngineEncoderAsync(config, ffmpeg.IsAvailable, cancellationToken));
-        results.Add(CheckInEngineFrameThroughput(config));
+
+        if (hooked)
+        {
+            results.Add(OperatingSystem.IsWindows()
+                ? new CheckResult("InEngineHooked platform", CheckStatus.Pass, "Windows", "OS")
+                : new CheckResult("InEngineHooked platform", CheckStatus.Fail,
+                    "Windows only: frames come from the plugin's DXGI present hook. Use InEngine on this OS",
+                    "OS"));
+        }
+        else
+        {
+            results.Add(CheckInEngineFrameThroughput(config));
+        }
 
         // The provider's engine brackets are tick-scheduled; its cvar setup and its emergency stop are
         // not. Neither capability can be checked without a plugin connected, so this is a statement of
@@ -587,7 +611,9 @@ public sealed class DoctorTask(
         results.Add(new CheckResult("InEngine plugin capabilities", CheckStatus.Skip,
             $"Needs a plugin advertising '{CsvgCapabilities.TickScheduledCommands}' (recording brackets) and " +
             $"'{CsvgCapabilities.ConsoleExec}' (the cvar setup before recording, and stopping a failed clip's " +
-            "recording); checked at session start", "Plugin handshake"));
+            "recording)" +
+            (hooked ? $", and '{CsvgCapabilities.PresentCapture}' (the frame stream)" : "") +
+            "; checked at session start", "Plugin handshake"));
 
         return results;
     }

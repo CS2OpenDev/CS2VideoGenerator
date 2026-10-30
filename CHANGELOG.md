@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README: added a quickstart, documented the `InEngineHooked` provider, `--game-events` and the
   bundled configuration defaults, and removed references to versions that were never released.
 
+### Fixed
+
+- `csvg doctor` with `VideoCaptureProvider` set to `InEngineHooked` reported a failed "Unknown
+  provider" check. It now runs the in-engine checks for it, plus the Windows-only platform check and
+  the plugin's `present-capture` requirement, and leaves out the frame-file throughput row.
+
 ### Removed
 
 - **Plugin:** the diagnostic console mirror that copied every engine console line into
