@@ -259,7 +259,7 @@ void MockEngineInterface::ExecuteClientCmd(int slot, const char *cmd, bool immed
     {
         std::cout << "[MOCK ENGINE] CS2 Engine: " << cmd << std::endl;
     }
-    // Other common demo commands - log but don't warn ("demo_ui_mode" is the v1.1
+    // Other common demo commands - log but don't warn ("demo_ui_mode" is the
     // interactive-demo-ui load flag - expected, not unknown)
     else if (std::strncmp(cmd, "sv_cheats", 9) == 0 || std::strncmp(cmd, "volume", 6) == 0 ||
              std::strncmp(cmd, "cl_hud_telemetry", 16) == 0 || std::strncmp(cmd, "cl_trueview_show_status", 23) == 0 ||

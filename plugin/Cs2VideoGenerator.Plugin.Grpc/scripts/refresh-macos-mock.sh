@@ -26,7 +26,7 @@ fi
 # The build directory is baked into the binary (see docs/build-path-privacy.md), and
 # cmake/path-privacy.cmake maps away only the checkout it is part of. A linked worktree
 # under some scratch directory therefore still discloses that directory's name and
-# layout -- which is exactly how the 1.0.0 mock ended up advertising one.
+# layout -- which is how an earlier mock build ended up advertising one.
 # git-common-dir differs from git-dir only in a linked worktree. Both are resolved to
 # real absolute paths first: --git-common-dir is reported RELATIVE TO THE CWD when run
 # from a subdirectory, so comparing the raw strings reports every build as a worktree.

@@ -5,7 +5,6 @@
     "C_Cpp.dimInactiveRegions": false,
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "C_Cpp.clang_format_style": "file",
-    "C_Cpp.clang_format_path": "/opt/homebrew/bin/clang-format",
     "C_Cpp.codeAnalysis.clangTidy.enabled": true,
     "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
     "C_Cpp.codeAnalysis.runAutomatically": true,

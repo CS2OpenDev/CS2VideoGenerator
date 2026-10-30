@@ -257,7 +257,7 @@ endif()
 
 # ...and no build-tree RPATH either. Linking server.so against the HL2SDK stubs in
 # external/hl2sdk/lib/linux64 made CMake record that directory as DT_RUNPATH, so the
-# shipped 1.0.0 plugin advertised the build machine's absolute path. Nothing needs it:
+# plugin advertised the build machine's absolute path. Nothing needs it:
 # inside CS2 the engine has already loaded tier0, and on a user's machine the recorded
 # directory does not exist. Unlike __FILE__ strings, RPATH is a linker artifact that
 # -ffile-prefix-map does not touch.

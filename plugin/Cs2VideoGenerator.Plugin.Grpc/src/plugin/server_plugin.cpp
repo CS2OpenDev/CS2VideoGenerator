@@ -31,7 +31,6 @@
 // HL2SDK headers - must come after gRPC/protobuf
 #include "cdll_interfaces.h"
 #include "icvar.h"
-#include "tier0/logging.h"   // TEMP(investigation): console mirror listener
 #include "tier1/utlstring.h" // CUtlString: the out-parameter type of tier0's SaveKV3AsJSON
 #ifdef _WIN32
 #define SERVER_LIB_PATH "\\csgo\\bin\\win64\\server.dll"
@@ -183,32 +182,6 @@ void DeleteLogFile()
 {
     remove("csvg.log");
 }
-
-/**
- * @brief TEMP(investigation): mirrors every engine log/console line into csvg_console.log.
- *
- * The engine reports command failures (e.g. `Failed to start recording movie: ...`) only to
- * its console, which nothing else captures - `-condebug` and `con_logfile` are both inert in
- * current CS2 builds. tier0's logging system fans every line out to registered listeners, so
- * this is the one reliable tap. Registered in Connect, unregistered in Shutdown.
- */
-class CsvgConsoleMirror final : public ILoggingListener
-{
-  public:
-    void Log(const LoggingContext_t *pContext, const tchar *pMessage) override
-    {
-        FILE *pFile = fopen("csvg_console.log", "a");
-        if (pFile == NULL)
-        {
-            return;
-        }
-        fputs(pMessage, pFile);
-        fclose(pFile);
-    }
-};
-
-/** @brief The one console-mirror instance registered with tier0's logging system. */
-CsvgConsoleMirror consoleMirror;
 
 /**
  * @brief Logs a formatted message to the CS2 console (with color) and to
@@ -525,7 +498,7 @@ void StartGrpcClient()
  * polling thread.
  */
 // present_capture.cpp: the DXGI hook behind the InEngineHooked provider. Installed from
-// the engine-frame hook below (the spike-validated site); inert unless the CSVG host is
+// the engine-frame hook below; inert unless the CSVG host is
 // listening on the frame pipe when a startmovie executes.
 void CsvgPresentCaptureEnsureHook();
 
@@ -948,11 +921,6 @@ bool Connect(IAppSystem *appSystem, CreateInterfaceFn factoryFn)
     // this running before it ever issues one.
     UnhideCommandsAndCvars();
 
-    // TEMP(investigation): tap the engine's log fan-out so console-only failure text
-    // (e.g. startmovie's) lands somewhere readable.
-    remove("csvg_console.log");
-    LoggingSystem_RegisterLoggingListener(&consoleMirror);
-
     // Opportunistic and, in practice, always too early: client.dll is not loaded yet at
     // this point, so this is expected to fail. The polling loop retries until it wins.
     if (!TryInstallFrameStageNotifyHook("Connect") && !connectSiteMissLogged.exchange(true))
@@ -978,9 +946,6 @@ bool Connect(IAppSystem *appSystem, CreateInterfaceFn factoryFn)
 void Shutdown()
 {
     isQuitting = true;
-
-    // TEMP(investigation): stop mirroring the engine console before teardown.
-    LoggingSystem_UnregisterLoggingListener(&consoleMirror);
 
     if (serverConfigShutdown != NULL)
     {
