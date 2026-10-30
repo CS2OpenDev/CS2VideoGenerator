@@ -75,10 +75,10 @@ public enum MissingAudioBehavior
 /// <remarks>
 ///     <para>
 ///         Everything in this section is a value rather than something the provider infers. The
-///         defaults now reflect what CS2 build 2000879 was observed doing on 2026-07-30 (frames,
-///         numbering, format tokens); the properties still marked unverified are the ones that run did not
-///         reach: audio placement, Targa mode, the focus-sleep default. Each property carries what
-///         is known and what goes wrong when the value is wrong.
+///         defaults reflect what CS2 build 2000879 was observed doing (frames, numbering, format
+///         tokens, Targa mode, audio placement); the one property still marked unverified is the
+///         focus-sleep restore value. Each property carries what is known and what goes wrong when
+///         the value is wrong.
 ///     </para>
 ///     <para>
 ///         Correcting reality is then an edit to configuration, not a change to the provider, the
@@ -212,16 +212,15 @@ public record InEngineEngineOutput
     ///     Glob matching the wav the engine writes for a movie, with <c>{0}</c> standing in for the
     ///     movie name.
     /// </summary>
-    // Unverified. Confirm the file name, and whether it lands in a timestamped subdirectory of
-    // the audio directory (which is why the search is recursive). Wrong value = the wav is not found
-    // and the clip takes the MissingAudioBehavior path.
+    // Observed on CS2 build 2000879: the wav is named exactly <name>.wav and lands in a timestamped
+    // subdirectory of the audio directory (which is why the search is recursive). Wrong value = the
+    // wav is not found and the clip takes the MissingAudioBehavior path.
     public string AudioFileSearchPattern { get; init; } = "{0}*.wav";
 
     /// <summary>
     ///     Whether the wav search descends into subdirectories of the audio directory.
     /// </summary>
-    // Unverified. Expected true, because post-Armory builds are believed to write into a
-    // timestamped subdirectory.
+    // Observed on CS2 build 2000879: the engine writes into a timestamped subdirectory.
     public bool AudioSearchRecursive { get; init; } = true;
 }
 
@@ -262,7 +261,7 @@ public record InEngineCaptureConfiguration
     /// <summary>
     ///     The ffmpeg pixel format of the frames the plugin's present hook streams.
     /// </summary>
-    // Observed on CS2 build 2000879 (2026-07-30, Gate 4 spike): the swapchain backbuffer is
+    // Observed on CS2 build 2000879 (2026-07-30): the swapchain backbuffer is
     // DXGI_FORMAT_R8G8B8A8_UNORM - RGBA, not the BGRA Targa uses - non-multisampled, at native
     // window resolution, post-HUD. The plugin sends its rows pitch-stripped, 4 bytes per pixel.
     public const string PresentHookPixelFormat = "rgba";
@@ -412,8 +411,8 @@ public record InEngineCaptureConfiguration
     ///     finished clip as <c>&lt;name&gt;.engine-audio.wav</c> and reported on
     ///     <see cref="CaptureResult.AdditionalOutputs" />. The wav is the clip's original
     ///     game-time audio with zero processing passes: the right source for any external
-    ///     post-processing, which is why a caller might want it kept (the G-block analysis
-    ///     measured what re-processing already-stretched audio costs).
+    ///     post-processing, which is why a caller might want it kept (re-processing
+    ///     already-stretched audio measurably degrades it).
     /// </summary>
     public bool KeepEngineAudio { get; init; }
 

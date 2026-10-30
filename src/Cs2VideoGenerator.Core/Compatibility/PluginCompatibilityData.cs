@@ -18,7 +18,7 @@ public sealed record KnownBrokenVersion
 {
     /// <summary>
     ///     Plugin versions the entry applies to. <see langword="null" /> means all plugin versions.
-    ///     Supports an exact version ("1.0.1") or a prefix wildcard ("1.0.*").
+    ///     Supports an exact version ("0.10.0") or a prefix wildcard ("0.10.*").
     /// </summary>
     public string? PluginVersionRange { get; init; }
 

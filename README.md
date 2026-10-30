@@ -2,9 +2,11 @@
 
 Automated Counter-Strike 2 video generation from demo files. CS2 Video Generator (CSVG) drives demo playback and video capture to produce clips and highlight compilations.
 
+> CSVG is an independent project. It is not affiliated with or endorsed by Valve Corporation. Counter-Strike and Counter-Strike 2 are trademarks of Valve Corporation. CSVG modifies your local CS2 installation while it runs (see [below](#important-how-csvg-modifies-your-cs2-installation)); use it at your own risk.
+
 ## Overview
 
-A C++ plugin loaded by the game talks directly to CS2's engine through HL2SDK. On the .NET side, a Core library manages the CS2 process lifecycle, plugin communication and video capture, and a CLI orchestrates the video generation workflow on top of it. OBS Studio recording is driven over obs-websocket by [Obs.NET](https://www.nuget.org/packages/Obs.NET).
+A C++ plugin loaded by the game talks directly to CS2's engine through HL2SDK. On the .NET side, a Core library manages the CS2 process lifecycle, plugin communication and video capture, and a CLI orchestrates the video generation workflow on top of it. By default CS2 renders the video itself (offline `startmovie` capture, encoded with FFmpeg); OBS Studio recording, driven over obs-websocket by [Obs.NET](https://www.nuget.org/packages/Obs.NET), is available as an alternative backend.
 
 The .NET orchestrator and the plugin talk to each other in real time over a gRPC bidirectional stream. That is what makes precise control over demo playback and synchronized video capture possible.
 
@@ -12,11 +14,11 @@ CSVG is a **pure capture executor**: you supply a compilation definition describ
 
 ## Requirements
 
-- .NET 10.0 SDK
+- .NET 10.0 (runtime for the dotnet tool, SDK to build from source; not needed for the self-contained archive)
 - Counter-Strike 2
+- FFmpeg (used by the in-engine capture providers to encode clips, and for clip concatenation)
 - OBS Studio 28 or newer, only for the `OBS` capture provider (obs-websocket v5 is bundled with OBS 28+; see [OBS Studio Setup](#obs-studio-setup))
-- FFmpeg (for clip concatenation)
-- Windows or Linux
+- Windows or Linux. The experimental `InEngineHooked` capture provider is Windows-only
 
 ## Important: How CSVG Modifies Your CS2 Installation
 
@@ -29,6 +31,18 @@ To control demo playback, CSVG temporarily modifies your CS2 installation for th
 **Safety mechanism:** Before every launch, CSVG backs up each file it is about to modify (`gameinfo.gi`, the `game/core/cfg` directory, and your user settings under Steam `userdata`) to a central backup directory. When the session ends, the plugin files are removed and the backups are restored automatically. You can also manage backups manually with the [`backup`](#backup---backup-game-files), [`restore`](#restore---restore-game-files), and [`cleanup`](#cleanup---clean-up-backups) commands, and inspect state with `doctor`.
 
 **Warning:** Do not join VAC-secured servers from a modified installation. If CSVG (or CS2) crashed and the automatic restore did not run, run `csvg restore` to put your installation back to its original state before playing online. When in doubt, verify game file integrity through Steam.
+
+## Quickstart
+
+```bash
+dotnet tool install -g Cs2VideoGenerator.Cli
+csvg doctor                                   # check that Steam, CS2 and FFmpeg are found
+csvg watch --demo match.dem --start-tick 5000 --end-tick 8000
+csvg generate --file compilation.json         # capture the clips a compilation defines
+```
+
+`watch` records into `captures/` under the working directory and prints the output path when
+playback ends. See [Compilation JSON Reference](#compilation-json-reference) for the `generate` input.
 
 ## Installation
 
@@ -54,7 +68,7 @@ csvg <command> [options]
 ```bash
 # Clone the repository
 git clone https://github.com/CS2OpenDev/CS2VideoGenerator.git
-cd Cs2VideoGenerator
+cd CS2VideoGenerator
 
 # Build the solution
 dotnet build
@@ -78,7 +92,7 @@ csvg doctor --no-cache   # Force fresh path discovery
 Checks performed:
 - Steam installation and logged-in users
 - CS2 installation and executable paths, including the installed CS2 game build (read from `game/csgo/steam.inf`)
-- OBS Studio installation
+- The selected capture provider: for `InEngine`, FFmpeg and its encoders, the staging directory and its free space; for `OBS`, the OBS Studio installation
 - Plugin configuration: the CSVG package version, and the bundled plugin's presence and SHA-256 content hash
 - Backup directory status
 
@@ -183,7 +197,8 @@ Options:
 - `--plugin-path` - Override the bundled `server.dll`/`server.so` plugin with an external path (real CS2 mode only)
 - `--grpc-port` - Port for the gRPC server the CS2 plugin connects to (default: 50051). Note: the bundled plugin and mock_server connect to port 50051 (fixed at plugin build time), so a non-default port requires a custom plugin build targeting the same port
 - `--force` - Proceed even if the plugin/game version pair is on the known-incompatible list (see [CS2 Updates and Plugin Compatibility](#cs2-updates-and-plugin-compatibility))
-- `--capture-provider` - Capture backend to record with: `InEngine` or `OBS` (default: `InEngine`; names are matched ignoring case). Same as the `Cs2VideoGenerator:VideoCaptureProvider` configuration key. See [Capture providers](#capture-providers)
+- `--game-events` - Forward CS2 client-side game events to the host (off by default; observability only). Same as `Cs2VideoGenerator:EnableGameEventTelemetry`. Needs a plugin advertising `game-event-telemetry` (the Windows plugin and the mock server); otherwise a warning is logged and the session proceeds without it
+- `--capture-provider` - Capture backend to record with: `InEngine`, `InEngineHooked` (experimental, Windows only) or `OBS` (default: `InEngine`; names are matched ignoring case). Same as the `Cs2VideoGenerator:VideoCaptureProvider` configuration key. See [Capture providers](#capture-providers)
 
 ## Compilation JSON Reference
 
@@ -219,14 +234,14 @@ A settings block plus the clips to capture. Property names are case-insensitive.
 | `width` | int? | no | `null` | Output width in pixels; when omitted, the capture default is used |
 | `height` | int? | no | `null` | Output height in pixels; when omitted, the capture default is used |
 | `fullscreen` | bool | no | `false` | Launch CS2 in fullscreen mode instead of windowed |
-| `captureAudio` | bool | no | `true` | Capture audio in the recordings. When `false`, CSVG mutes the OBS audio inputs for the duration of each clip and restores each input's prior mute state afterwards (see [OBS Studio Setup](#obs-studio-setup)) |
+| `captureAudio` | bool | no | `true` | Capture audio in the recordings. When `false`, the in-engine providers write no audio track, and the OBS provider mutes the OBS audio inputs for the duration of each clip and restores each input's prior mute state afterwards (see [OBS Studio Setup](#obs-studio-setup)) |
 | `concatenateClips` | bool | no | `true` | Concatenate all clips into a single output file with FFmpeg after capture |
 | `deleteClipsAfterConcat` | bool | no | `false` | Delete individual clip files after successful concatenation (only applies when `concatenateClips` is true) |
 | `encoding` | object | no | `null` | FFmpeg encode controls for the final concatenated file; see [`settings.encoding` fields](#settingsencoding-fields). When omitted, clips are concatenated with lossless stream copy |
 
 ### `settings.encoding` fields
 
-> **Note:** these settings govern **only the final concatenated output file**. Per-clip recording quality (encoder, bitrate, format of the individual clips) is governed by your OBS profile, see [OBS Studio Setup](#obs-studio-setup). When the `encoding` block is omitted (or all fields are null), the concatenated file is produced with lossless stream copy (`-c:v copy -c:a copy`), which is fast and preserves the OBS output exactly. Setting any video field re-encodes the video stream; setting any audio field re-encodes the audio stream; a stream without settings remains stream-copied.
+> **Note:** these settings govern **only the final concatenated output file**. Per-clip recording quality (encoder, bitrate, format of the individual clips) is governed by the capture provider: the `Capture:InEngine` encoder settings for the in-engine providers (see [In-engine capture](docs/in-engine-capture.md)), or your OBS profile for `OBS` (see [OBS Studio Setup](#obs-studio-setup)). When the `encoding` block is omitted (or all fields are null), the concatenated file is produced with lossless stream copy (`-c:v copy -c:a copy`), which is fast and preserves the captured clips exactly. Setting any video field re-encodes the video stream; setting any audio field re-encodes the audio stream; a stream without settings remains stream-copied.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
@@ -238,7 +253,7 @@ A settings block plus the clips to capture. Property names are case-insensitive.
 | `extraInputArgs` | string | no | `null` | **Power-user escape hatch.** Raw FFmpeg arguments inserted before the concat input (e.g. `-hwaccel auto`), passed as-is with no validation or escaping. Does not by itself trigger re-encoding |
 | `extraOutputArgs` | string | no | `null` | **Power-user escape hatch.** Raw FFmpeg arguments appended to the output options (e.g. `-movflags +faststart`), passed as-is with no validation or escaping. Does not by itself trigger re-encoding |
 
-Example: re-encode the final file with x264 at CRF 23, leaving the OBS-recorded audio untouched.
+Example: re-encode the final file with x264 at CRF 23, leaving the clips' audio untouched.
 
 ```json
 "settings": {
@@ -302,7 +317,7 @@ CLI (Cs2VideoGenerator.Cli)
     |        |                                       HL2SDK engine interface
     |        |
     |        +--- ICaptureSession   <-- one per CS2 run, from the selected
-    |        |        |                 ICaptureSessionFactory ("OBS", ...)
+    |        |        |                 ICaptureSessionFactory ("InEngine", ...)
     |        |        +--- IClipCapture  <-- one per clip
     |        |
     |        +--- Cs2CompilationRunner (whole-compilation pipeline)
@@ -377,30 +392,28 @@ The plugin communicates via protocol buffers defined in `protos/cs2-video-genera
 
 ## Configuration
 
-Configuration is loaded from `appsettings.json` and can be overridden via command-line arguments:
+Configuration is loaded from `appsettings.json` and can be overridden via command-line arguments. The bundled `appsettings.json` sets the values below (logging omitted); the `Ffmpeg` section is not in the file and is shown with its built-in defaults:
 
 ```json
 {
   "Cs2VideoGenerator": {
-    "MockMode": false,
-    "ExternalMockServerPath": null,
-    "ExternalPluginPath": null,
-    "SteamInstallationDirectory": null,
-    "Cs2RootInstallationDirectory": null,
-    "VideoCaptureProvider": "OBS",
+    "VideoCaptureProvider": "InEngine",
     "GrpcPort": 50051,
-    "ForceIncompatiblePlugin": false
+    "OutputDirectory": "captures",
+    "DefaultCaptureFrameRate": 30
   },
   "Capture": {
     "OBS": {
       "Host": "localhost",
       "Port": 4455,
       "Password": null,
-      "ProfileName": null,
-      "SceneCollectionName": null,
       "AutoStart": true,
       "StartMinimized": true,
-      "MaxRetryAttempts": 3
+      "MaxRetryAttempts": 3,
+      "ReadinessRetryDelayMs": 5000,
+      "ReadinessTimeoutMs": 30000,
+      "ProfileName": null,
+      "SceneCollectionName": null
     }
   },
   "Ffmpeg": {
@@ -419,7 +432,12 @@ Configuration is loaded from `appsettings.json` and can be overridden via comman
 | `ExternalPluginPath` | Override bundled server.dll/so plugin (real mode) |
 | `SteamInstallationDirectory` | Override auto-discovered Steam path |
 | `Cs2RootInstallationDirectory` | Override auto-discovered CS2 path |
-| `VideoCaptureProvider` | Video capture backend (`OBS` or `InEngine`), matched ignoring case; its own settings live in `Capture:<name>` (same as `--capture-provider`). See [Capture providers](#capture-providers) |
+| `VideoCaptureProvider` | Video capture backend (`InEngine`, `InEngineHooked` or `OBS`; default `InEngine`), matched ignoring case; its own settings live in `Capture:<name>` (same as `--capture-provider`). See [Capture providers](#capture-providers) |
+| `GrpcPort` | Port for the gRPC server the plugin connects to (default `50051`; same as `--grpc-port`) |
+| `OutputDirectory` | Where `watch` writes recordings; a relative path resolves against the working directory (bundled value `captures`; same as `--output-dir`) |
+| `DefaultCaptureFrameRate` | Frame rate `watch` records at when `--fps` is not given (default `30`) |
+| `EnableGameEventTelemetry` | Forward CS2 client-side game events (default `false`; same as `--game-events`) |
+| `GameEventNames` | Game event names to forward when telemetry is enabled; empty or null forwards every event |
 | `ForceIncompatiblePlugin` | Proceed even if the plugin/game version pair is on the known-incompatible list (same as `--force`) |
 | `CompatibilityOverridePath` | Path to a JSON file replacing the embedded plugin compatibility data (see [CS2 Updates and Plugin Compatibility](#cs2-updates-and-plugin-compatibility)) |
 
@@ -432,8 +450,9 @@ Configuration is loaded from `appsettings.json` and can be overridden via comman
 | `AutoStart` | When `true` (default), CSVG launches OBS automatically if it is not already running, and shuts it down again when the application exits |
 | `StartMinimized` | Start the auto-launched OBS minimized (default `true`) |
 | `MaxRetryAttempts` | Maximum connection retry attempts (default `3`) |
+| `ReadinessRetryDelayMs` / `ReadinessTimeoutMs` | Delay between readiness checks, and total time to wait for OBS to accept requests after connecting (defaults `5000` / `30000` ms) |
 
-`Capture:InEngine` is documented in [In-engine capture](docs/in-engine-capture.md); it is omitted from the example above because its defaults work without configuration.
+`Capture:InEngine` (shared by `InEngine` and `InEngineHooked`) is documented in [In-engine capture](docs/in-engine-capture.md); it is omitted from the example above because its defaults work without configuration.
 
 Most paths are auto-discovered from standard Steam/OBS/FFmpeg installation locations. FFmpeg is expected to be in the system PATH unless `Ffmpeg:BinaryDirectory` is specified.
 
@@ -441,19 +460,21 @@ Most paths are auto-discovered from standard Steam/OBS/FFmpeg installation locat
 
 ### Capture providers
 
-CSVG records through one of two backends, selected with `--capture-provider` or
-`Cs2VideoGenerator:VideoCaptureProvider`. Each has its own settings under `Capture:<name>`.
+CSVG records through one of three backends, selected with `--capture-provider` or
+`Cs2VideoGenerator:VideoCaptureProvider`. Each has its own settings under `Capture:<name>`;
+`InEngineHooked` shares `Capture:InEngine`.
 
 | Provider | How it records | Timing | Frame rate | Status |
 |---|---|---|---|---|
 | `OBS` | OBS Studio screen-records the CS2 window over obs-websocket | Wall clock — the output is as long as playback took | From the OBS profile; `frameRate` is advisory | Supported |
-| `InEngine` (default) | CS2 renders offline via `startmovie` + `host_framerate`; frames stream into FFmpeg | Tick-exact — the output length is frames divided by frame rate | Honored, per clip, from `frameRate` | **Validated on build 2000879** — frames, audio and both formats observed end to end; cvar restore values still assumed |
+| `InEngine` (default) | CS2 renders offline via `startmovie` + `host_framerate`; frames stream into FFmpeg | Tick-exact — the output length is frames divided by frame rate | Honored, per clip, from `frameRate` | Supported |
+| `InEngineHooked` | Same offline rendering and audio as `InEngine`, but the plugin's present hook streams frames to FFmpeg as raw RGBA instead of writing image files; about twice as fast | Tick-exact | Honored, per clip, from `frameRate` | Experimental; Windows only, needs a plugin with the `present-capture` capability |
 
-`InEngine` is the default as of 1.1.1: frame-exact, lossless (Targa) output with no dropped frames,
-verified end to end against a real CS2 install (build 2000879) including game-time wav audio. It
-needs no OBS installation, only FFmpeg and fast local storage. [In-engine capture](docs/in-engine-capture.md)
-covers how it works and which facts remain open. Select `OBS` when you want the recording to go
-through your OBS profile instead.
+`InEngine` is the default: frame-exact output with no dropped frames, with game-time audio from the
+engine's own wav. Frames are dumped losslessly (Targa by default) and encoded with FFmpeg. It needs
+no OBS installation, only FFmpeg and fast local storage. [In-engine capture](docs/in-engine-capture.md)
+covers how it works, the hooked variant, and what has been verified against real CS2. Select `OBS`
+when you want the recording to go through your OBS profile instead.
 
 ### OBS Studio Setup
 
@@ -467,7 +488,7 @@ To enable the WebSocket server in OBS:
 
 With `Capture:OBS:AutoStart` enabled (the default), you do not need to start OBS yourself: CSVG discovers the OBS executable, launches it (minimized when `StartMinimized` is true), connects, and shuts it down when finished. If OBS is already running, CSVG connects to the existing instance and leaves it running afterwards.
 
-Recording quality (encoder, bitrate, per-clip format) is governed by your OBS profile settings. The final concatenated compilation file can optionally be re-encoded independently via the compilation JSON's [`settings.encoding`](#settingsencoding-fields) block.
+With the `OBS` provider, recording quality (encoder, bitrate, per-clip format) is governed by your OBS profile settings. The final concatenated compilation file can optionally be re-encoded independently via the compilation JSON's [`settings.encoding`](#settingsencoding-fields) block.
 
 When `captureAudio` is `false` in a compilation, CSVG disables audio by muting the OBS audio inputs (desktop audio, mic/aux, and audio-producing sources such as the game capture) over obs-websocket for the duration of the clip. Muting is runtime-only: each input's prior mute state is recorded and restored when the clip finishes (or when the session shuts down, even after a failed capture). Inputs you had muted yourself stay muted, and your OBS profile is never permanently modified.
 
@@ -489,8 +510,6 @@ See [Mock CS2 Mode](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/do
 `Cs2VideoGenerator.Core` can be consumed as a NuGet package without the CLI, either from [NuGet.org](https://www.nuget.org/packages/Cs2VideoGenerator.Core) or by referencing the `.nupkg` attached to a [GitHub Release](https://github.com/CS2OpenDev/CS2VideoGenerator/releases) from a local source.
 
 One piece of wiring is mandatory. The CS2 plugin (and the mock server) connect **back** to a gRPC server hosted by *your* process, so your host must map `Cs2GameService` on an HTTP/2 endpoint at the configured port (`Cs2VideoGenerator:GrpcPort`, default `50051`). A plain console host without this wiring cannot run sessions: `StartAsync` detects the missing endpoint before launching CS2 and fails fast with an explanatory `InvalidOperationException`.
-
-Coming from the 1.x `ICsvgClient` API, start with [Migrating to 2.0](docs/migrating-to-2.0.md) — the break is hard and there is no compatibility shim.
 
 Minimal working host:
 
@@ -559,7 +578,7 @@ if (session.Engine.Supports(CsvgCapabilities.TimescaleSet))
     await session.Engine.SetDemoTimescaleAsync(0.25f);   // quarter-speed slow-motion
 ```
 
-Each capability-gated API documents whether it **degrades** or **throws** when the plugin lacks the capability, and the rule (spelled out on `CsvgCapabilities`) has two halves. Latched telemetry and work the orchestrator started on its own initiative degrade: read-only accessors stay `null`/empty, and optional work driven from configuration rather than from a call — the startup game-event subscription — is skipped with a warning. An operation a caller explicitly asked for that has no v1.0 equivalent throws `NotSupportedException` naming the capability. Where a legacy path does exist the call takes it instead of throwing.
+Each capability-gated API documents whether it **degrades** or **throws** when the plugin lacks the capability, and the rule (spelled out on `CsvgCapabilities`) has two halves. Latched telemetry and work the orchestrator started on its own initiative degrade: read-only accessors stay `null`/empty, and optional work driven from configuration rather than from a call — the startup game-event subscription — is skipped with a warning. An operation a caller explicitly asked for that has no legacy equivalent throws `NotSupportedException` naming the capability. Where a legacy path does exist the call takes it instead of throwing.
 
 - **Engine-truth demo state** — `QueryDemoStateAsync()` returns a `DemoState` snapshot read from the engine (playing/paused, current tick, loaded demo path, change origin), not inferred from issued commands. `LastDemoState`, `LastTickIsPaused`, and the `DemoStateChanged` event surface change-driven updates. `CsvgVideoSession.StartWatchAsync(...)` is the canonical live-sync bootstrap (playback-only, no capture backend, densest tick stream). Requires `demo-state-events` / `engine-pause-detection`; stays `null`/silent otherwise.
 - **Arrival-verified seeks.** `SetDemoTickAsync(demoTick, pauseAfterSeek, waitForCompletion)` returns a `SeekResult`. With `waitForCompletion: true` it completes only when the plugin acknowledges the seek and reports the tick the engine was *actually observed* at on arrival (instead of the pre-echoed target); `pauseAfterSeek` forces and reports the post-seek play/pause state. Requires `command-ack` (throws `NotSupportedException` without it); the legacy fire-and-forget `SetDemoTickAsync(demoTick)` still works on every plugin.
@@ -644,13 +663,13 @@ and is updated via package updates. You can replace it without updating the pack
 {
   "builtForCs2Build": "14093",
   "knownBrokenVersions": [
-    { "pluginVersionRange": "1.0.*", "gameBuild": "14200", "reason": "engine interface changed" }
+    { "pluginVersionRange": "0.10.*", "gameBuild": "14200", "reason": "engine interface changed" }
   ]
 }
 ```
 
 `pluginVersionRange` is optional (`null` = all plugin versions) and supports an exact version or a
-prefix wildcard (`"1.0.*"`). `csvg doctor` reports the CSVG package version, the bundled plugin's
+prefix wildcard (`"0.10.*"`). `csvg doctor` reports the CSVG package version, the bundled plugin's
 presence/hash, and the installed CS2 game build, which is useful when reporting compatibility issues.
 
 ## Known Limitations
@@ -660,8 +679,8 @@ presence/hash, and the installed CS2 game build, which is useful when reporting 
 
 ## Roadmap
 
-Planned and under-exploration features (HLAE capture backend, mid-clip camera switching, dropped-frame detection, and more) are documented in [docs/ROADMAP.md](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/docs/ROADMAP.md). Release history is tracked in [CHANGELOG.md](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/CHANGELOG.md).
+Planned and under-exploration features (mid-clip camera switching, dropped-frame detection, Linux support for hooked capture, and more) are documented in [docs/ROADMAP.md](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/docs/ROADMAP.md). Release history is tracked in [CHANGELOG.md](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/CHANGELOG.md).
 
 ## License
 
-GPL-3.0-only. See [LICENSE](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/LICENSE) for details.
+MIT. See [LICENSE](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/LICENSE) for details. Third-party components bundled in the packages and the native plugin are listed in [THIRD-PARTY-NOTICES.md](https://github.com/CS2OpenDev/CS2VideoGenerator/blob/main/THIRD-PARTY-NOTICES.md).

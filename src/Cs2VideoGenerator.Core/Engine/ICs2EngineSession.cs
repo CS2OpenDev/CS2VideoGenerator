@@ -27,7 +27,7 @@ public interface ICs2EngineSession : IEngineConsole, IAsyncDisposable
     /// <summary>
     ///     Whether demo playback was paused as of the latest tick update, or null when unknown.
     ///     Best-effort: updated on the read loop alongside <see cref="LastTick" /> whenever the
-    ///     plugin serializes <c>TickUpdateEvent.is_paused</c>; v1.0 plugins never send the field, so
+    ///     plugin serializes <c>TickUpdateEvent.is_paused</c>; older plugins never send the field, so
     ///     against them this stays null. Engine truth only when the plugin advertises
     ///     <see cref="CsvgCapabilities.EnginePauseDetection" /> ("engine-pause-detection").
     /// </summary>
@@ -62,7 +62,7 @@ public interface ICs2EngineSession : IEngineConsole, IAsyncDisposable
     ///     Capability tokens advertised by the connected plugin build (see
     ///     <see cref="CsvgCapabilities" />). Empty until the plugin's process-status handshake
     ///     arrives, latched anew from every process status (last write wins), and reset to empty
-    ///     when the session ends. An empty set means "assume the v1.0 baseline command set".
+    ///     when the session ends. An empty set means "assume the baseline command set".
     /// </summary>
     IReadOnlySet<string> PluginCapabilities { get; }
 

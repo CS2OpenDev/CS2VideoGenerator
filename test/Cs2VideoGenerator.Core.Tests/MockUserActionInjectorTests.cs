@@ -14,7 +14,7 @@ using Xunit;
 namespace Cs2VideoGenerator.Core.Tests;
 
 /// <summary>
-///     v1.1 mock user-action injection channel (Core hook): DI selection mirrors the
+///     The mock user-action injection channel (Core hook): DI selection mirrors the
 ///     process-manager selection (mock mode → the mock manager doubles as the injector;
 ///     real mode → a no-op stub), and the injector fails fast when no mock_server runs.
 /// </summary>

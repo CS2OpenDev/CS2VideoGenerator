@@ -1,13 +1,15 @@
-# CS2 Video Generator Plugin - gRPC Server
+# CS2 Video Generator Plugin
 
-The C++ gRPC server for the CS2 Video Generator Plugin project. CMake and vcpkg underneath, set up so it builds on and for more than one platform.
+The C++ CS2 plugin for CS2 Video Generator, which connects to the .NET orchestrator as a gRPC client, plus the `mock_server` test double. CMake and vcpkg underneath, set up so it builds on and for more than one platform.
 
 ## Features
 
-Windows, Linux, and macOS are all supported, M-series included. One host can build for the others:
+The server plugin (`server.dll` / `server.so`) builds for Windows x64 and Linux x64, the platforms CS2 runs on. `mock_server` also builds for Linux ARM64 and macOS ARM64 (Apple Silicon). Linux and macOS hosts can cross-compile for the other targets:
 
-- macOS → Windows, Linux x64, Linux ARM64
-- Linux → Windows, Linux ARM64, macOS (via osxcross)
+- macOS → Windows x64 (clang-cl + xwin), Linux x64, Linux ARM64
+- Linux → Windows x64 (clang-cl + xwin), Linux ARM64, macOS ARM64 (via osxcross, untested)
+
+Windows hosts build natively only. Released Windows binaries come from the Linux → Windows cross-build; see [BUILD.md](docs/BUILD.md) for the full matrix and what CI covers.
 
 The rest is unremarkable: C++17, gRPC, vcpkg for dependency management, and a CMake preset per build configuration.
 
@@ -15,7 +17,7 @@ The rest is unremarkable: C++17, gRPC, vcpkg for dependency management, and a CM
 
 ### Prerequisites
 
-CMake 3.20+. vcpkg comes in as a submodule, so `git submodule update --init` and then `./external/vcpkg/bootstrap-vcpkg.sh`. Ninja is recommended for cross-compilation.
+CMake 3.25+ (`CMakePresets.json` uses preset schema version 6). vcpkg and the HL2SDK come in as submodules, so `git submodule update --init --recursive` and then `./external/vcpkg/bootstrap-vcpkg.sh`. The Unix and cross-compilation presets use Ninja.
 
 Platform-specific setup is in [BUILD.md](docs/BUILD.md).
 
@@ -23,15 +25,17 @@ Platform-specific setup is in [BUILD.md](docs/BUILD.md).
 
 ```bash
 cd plugin/Cs2VideoGenerator.Plugin.Grpc
-git submodule update --init
-./external/vcpkg/bootstrap-vcpkg.sh    # first time only
+git submodule update --init --recursive
+./external/vcpkg/bootstrap-vcpkg.sh    # first time only (bootstrap-vcpkg.bat on Windows)
 
 cmake --preset release-unix    # Linux/macOS
 cmake --build --preset release-unix --parallel
 
-cmake --preset release          # Windows
+cmake --preset release          # Windows (Visual Studio 2022)
 cmake --build --preset release --parallel
 ```
+
+Binaries land in `artifacts/build/Cs2VideoGenerator.Plugin.GRPC/<Release|Debug>/bin/<rid>/` at the repository root.
 
 ### Cross-Compilation
 
@@ -48,14 +52,13 @@ Toolchain setup, the full build matrix, and more cross-compilation examples are 
 
 ## Documentation
 
-- [BUILD.md](docs/BUILD.md) — prerequisites, platform setup, cross-compilation, troubleshooting
-- [CROSS-COMPILATION-TESTING.md](docs/CROSS-COMPILATION-TESTING.md) — cross-compilation testing procedures
+- [BUILD.md](docs/BUILD.md) — prerequisites, platform setup, cross-compilation, verifying builds, troubleshooting
 
 API reference: run `doxygen Doxyfile` in the plugin root; the HTML lands in `docs/html/`.
 
 ## Dependencies
 
-gRPC 1.40.0+, Protocol Buffers 3.15.0+, CMake 3.20+, C++17.
+gRPC and Protocol Buffers from vcpkg, at the versions pinned by `builtin-baseline` in `vcpkg.json`; the AlliedModders HL2SDK (`cs2` branch) for the server plugin; CMake 3.25+; C++17.
 
 ## IDE Setup (Optional)
 
@@ -65,7 +68,7 @@ Open the project folder in VS Code — it will prompt you to install the recomme
 
 ### CLion
 
-Import the CMake project directly and set the CMake toolchain to vcpkg in settings.
+Open the plugin folder; CLion loads `CMakePresets.json`, and the presets already point CMake at the vcpkg toolchain.
 
 ## Contributing
 
@@ -73,4 +76,4 @@ Set up per [BUILD.md](docs/BUILD.md), branch, make your changes, test on your pl
 
 ## License
 
-GPL-3.0-only, as part of the Cs2VideoGenerator project. See the repository root [LICENSE](../../LICENSE) file for details.
+MIT, as part of the Cs2VideoGenerator project. See the repository root [LICENSE](../../LICENSE) file for details. The plugin binaries statically link third-party libraries and include Valve SDK code; see [THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md).

@@ -246,7 +246,7 @@ public class ServiceCollectionOptionsSelectionTests
     }
 
     /// <summary>
-    ///     InEngine is the default as of 1.1.0: its frame pipeline and audio were validated against a
+    ///     InEngine is the default: its frame pipeline and audio were validated against a
     ///     real CS2 (build 2000879), it needs no OBS install, and its Targa path is both lossless and
     ///     faster than jpg on the machines measured. This test is the tripwire on that decision.
     /// </summary>

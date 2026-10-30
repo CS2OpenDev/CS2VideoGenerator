@@ -18,8 +18,8 @@ public static class CaptureProviderNames
 
     /// <summary>
     ///     The in-engine provider: renders offline through CS2's own <c>startmovie</c> at a fixed
-    ///     timestep, and encodes the resulting frame dump with ffmpeg. The default provider since
-    ///     v1.1.0, validated against a real CS2 build (2000879).
+    ///     timestep, and encodes the resulting frame dump with ffmpeg. The default provider,
+    ///     validated against a real CS2 build (2000879).
     /// </summary>
     public const string InEngine = "InEngine";
 

@@ -275,7 +275,7 @@ message Cs2ProcessStatus {
   // an older plugin simply omits them and the orchestrator treats the versions
   // as unknown (warning, never an error).
 
-  // CSVG plugin version embedded at build time (e.g. "1.0.1").
+  // CSVG plugin version embedded at build time (e.g. "0.10.0").
   optional string plugin_version = 3;
   // HL2SDK submodule commit SHA the plugin was built against.
   optional string hl2sdk_commit = 4;
@@ -283,7 +283,7 @@ message Cs2ProcessStatus {
   // (e.g. mock server without a simulated game version).
   optional string game_version = 5;
 
-  // Capability tokens supported by this plugin build (v1.1). Known tokens:
+  // Capability tokens supported by this plugin build. Known tokens:
   //   "demo-state-events"      DemoStateEvent emission + QueryDemoStateCommand
   //   "command-ack"            CommandAckEvent for command_id-carrying requests
   //   "seek-ack"               SetDemoTickCommand.pause_after_seek + arrival-acked seeks
@@ -298,7 +298,7 @@ message Cs2ProcessStatus {
   //   "game-event-telemetry"   SetGameEventSubscriptionCommand + GameEventTelemetryEvent
   //                            (advertised only where the game-event hook is available)
   //   "console-exec"           ExecuteConsoleCommandsCommand (immediate engine-thread execution)
-  // Older plugins omit the field -> empty list -> the orchestrator assumes the v1.0
+  // Older plugins omit the field -> empty list -> the orchestrator assumes the
   // baseline command set and degrades gracefully (warning, never an error) — same
   // philosophy as the version fields above.
   repeated string capabilities = 6;

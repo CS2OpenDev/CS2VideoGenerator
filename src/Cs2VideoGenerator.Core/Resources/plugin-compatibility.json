@@ -7,8 +7,8 @@
   //   was built/verified against. null = no reference recorded; the game build is
   //   then accepted silently.
   // knownBrokenVersions: array of { pluginVersionRange?, gameBuild, reason }.
-  //   pluginVersionRange: null = all plugin versions, exact ("1.0.1") or prefix
-  //   wildcard ("1.0.*"). This list intentionally starts empty.
+  //   pluginVersionRange: null = all plugin versions, exact ("0.10.0") or prefix
+  //   wildcard ("0.10.*"). This list intentionally starts empty.
   "builtForCs2Build": null,
   "knownBrokenVersions": []
 }

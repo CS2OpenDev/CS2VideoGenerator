@@ -1,10 +1,10 @@
 # In-engine capture (`InEngine`)
 
-> **Validated against real CS2** (build 2000879, 2026-07-30): both frame formats produce working
-> 1080p60 video **with audio** out of the box - `startmovie`'s output location, naming, jpg and tga
-> modes, jpeg quality, tick-exact frame pacing and the game-time wav are all observed facts. The cvar
-> restore values are the main remaining assumptions. `InEngine` is the default provider since v1.1.0.
-> The [last section](#unverified-against-real-cs2) lists exactly what is and is not confirmed. For the
+> **Validated against real CS2** (build 2000879): both frame formats produce working 1080p60 video
+> **with audio** out of the box - `startmovie`'s output location, naming, jpg and tga modes, jpeg
+> quality, tick-exact frame pacing and the game-time wav are all observed facts. The cvar restore
+> values are the main remaining assumptions. `InEngine` is the default provider. The
+> [last section](#unverified-against-real-cs2) lists exactly what is and is not confirmed. For the
 > faster hooked variant, see [The hooked variant](#the-hooked-variant-inenginehooked).
 
 ## What it does
@@ -150,7 +150,7 @@ that caps it at ~1.15x realtime at 1080p60. `InEngineHooked` removes it:
   61 dB PSNR against the Targa dump), so the output is exactly as frame-accurate as the file path.
 
 Measured on the reference machine, benchmark clip, 1080p60: **2.70x realtime (162 fps)** against the
-file path's 1.15x. First validated end to end 2026-07-30 (1873 frames, audio in sync within 9 ms).
+file path's 1.15x. Validated end to end on CS2 build 2000879 (1873 frames, audio in sync within 9 ms).
 
 ```json
 { "Cs2VideoGenerator": { "VideoCaptureProvider": "InEngineHooked" } }
@@ -281,7 +281,7 @@ under the game files directory, while frames go under the csvg search path (both
 is not present on current builds. After `endmovie`:
 
 1. The wav is located by glob under the audio directory, searched recursively (it is expected in the
-   movie's timestamped subdirectory, beside the frames), newest match wins. One movie name per clip
+   movie's timestamped subdirectory), newest match wins. One movie name per clip
    keeps clips from finding each other's audio, and anything under this clip's name is swept when the
    clip arms. A candidate last written before the clip started is rejected outright: a clip whose
    recording produced no wav would otherwise inherit the previous run's — right name, plausible
@@ -318,17 +318,20 @@ Section `Capture:InEngine`.
 | Setting | Default | Meaning |
 |---|---|---|
 | `FrameFormat` | `Tga` | `Jpg` or `Tga`. See above before choosing `Tga` |
-| `JpegQuality` | *(unset)* | JPEG quality cvar value; unset leaves the engine's own setting alone |
+| `JpegQuality` | `90` | JPEG quality passed on the `startmovie` line for `Jpg`; `null` leaves the engine's own default (50) |
 | `IntermediateEncoder` | `Auto` | `Auto`, `Nvenc`, `X264`, `Utvideo`. `Auto` probes the local ffmpeg and prefers `h264_nvenc`. `Utvideo` is lossless and needs an output container that can carry it — the audio mux copies the video stream, and MP4 cannot, so `Utvideo` into an `mp4`/`mov` output is rejected before the render rather than after it |
-| `IntermediateQuality` | `16` | `-cq` for NVENC, `-crf` for x264. Near-lossless — see *Encoder quality vs speed* below |
+| `IntermediateQuality` | `16` | `-cq` for NVENC, `-crf` for x264. Near-lossless — see *Encoder quality vs speed* above |
 | `IntermediateEncoderPreset` | *(unset)* | The speed-for-quality dial: `p1`–`p7` for NVENC, `ultrafast`–`placebo` for x264, ignored by `Utvideo`. Unset means the encoder's default (`p7` / `veryfast`). Not validated here — ffmpeg rejects a name it does not know, by name, and the failure carries its stderr |
 | `IntermediateContainer` | `mkv` | Container for the video the frame pipe writes, before audio is muxed on |
 | `StagingDirectory` | `<cs2>/game/csgo/csvg/movie` | Where the engine's frames are expected. Resolved lazily — a host that never captures never needs a CS2 installation |
-| `AudioDirectory` | `<cs2>/game/csgo/csvg/movie` | Where the engine's movie audio is expected — the same movie root as the frames. Resolved lazily |
+| `AudioDirectory` | `<cs2>/game/csgo/movie` | Where the engine's movie audio is expected — a different root than the frames (observed). Resolved lazily |
 | `DeleteFramesAfterPipe` | `true` | Effectively mandatory for a real capture; turn it off only to inspect what the engine actually wrote |
 | `KeepStagingOnFailure` | `false` | Keep the evidence after a failed clip |
 | `MissingAudioBehavior` | `Fail` | `Fail` or `WarnAndContinue` — audio works on current builds, so a missing wav is a real problem |
+| `AdditionalSetupCommands` | `[]` | Extra console commands issued with the per-clip setup, after `host_framerate` and `engine_no_focus_sleep`. Nothing is restored afterwards |
 | `KeepEngineAudio` | `false` | Keep the engine's original game-time wav next to the output (`<name>.engine-audio.wav`, reported on `CaptureResult.AdditionalOutputs`) instead of deleting it after muxing — the zero-processing-pass source for external post-processing |
+| `FramePipeName` | `csvg-frames` | `InEngineHooked` only: the named pipe the plugin streams frames over, without the `\\.\pipe\` prefix. Must match the plugin build |
+| `HookedDrainTimeoutMs` | `15000` | `InEngineHooked` only: how long to wait after playback ends for the plugin's end-of-stream record |
 | `FrameConsumerPollMs` | `100` | How often the staging directory is scanned. Also bounds the tail drain, which is a fixed number of polls |
 | `StartTickClamp` | `96` | Earliest tick a command batch is scheduled at |
 | `AudioDurationTolerancePercent` | `2.0` | How far the wav may be from the video's game-time length before it is reported |
@@ -340,16 +343,16 @@ There is deliberately **no frame-rate setting** in this section: it arrives per 
 `CaptureMetadata.FrameRate` (the compilation JSON's `frameRate`, or the CLI's `--fps`), because it is
 the property of the requested output that this backend can actually honor. The CLI `watch` verb
 defaults it to 30 fps (`Cs2VideoGenerator:DefaultCaptureFrameRate`); the library and compilation
-defaults stay 60. There is also no drain-timeout setting: the drain's completion test is structural
+defaults stay 60. The file path also has no drain-timeout setting: the drain's completion test is structural
 (a frame is finished once a higher-numbered one exists, and the last one once it has settled), and a
 knob that bound nothing would only look like one that did.
 
 ### `Capture:InEngine:EngineOutput`
 
-Everything in this subsection describes what CS2 leaves on disk. The defaults now reflect what
-**CS2 build 2000879 was observed doing on 2026-07-30**: `startmovie csvg_000 jpg` recorded a
-tick-exact sequence into `movie/2026_07_30_15_44_29/csvg_00000000000.jpg` onward. Rows marked
-*(observed)* are facts from that session; the rest are still assumptions. It is a subsection rather
+Everything in this subsection describes what CS2 leaves on disk. The defaults reflect what
+**CS2 build 2000879 was observed doing**: `startmovie csvg_000 jpg` recorded a tick-exact sequence
+into `movie/2026_07_30_15_44_29/csvg_00000000000.jpg` onward. Rows marked *(observed)* are
+measured on that build; the rest are still assumptions. It is a subsection rather
 than a set of scattered settings so that correcting reality on a future build is an edit to one block.
 
 | Setting | Default | Status | What a wrong value does |
@@ -359,8 +362,10 @@ than a set of scattered settings so that correcting reality on a future build is
 | `FrameNumberDigits` | `8` | *(observed)* 8 digits, appended with no separator (`%s%08llu`) | The glob matches nothing; the clip fails with no frames |
 | `FirstFrameNumber` | `0` | *(observed)* numbering starts at 0 | Survivable — the consumer adopts the first number it sees and logs the disagreement |
 | `TgaFrameSizeBytes` | *(unset)* | *(observed)* uncompressed 32-bit; computed from the clip resolution when unset | Silently wrong output if the frames were ever compressed — which is why every frame is checked and the first mismatch fails the clip |
+| `TgaFormatToken` | `tga` | *(observed)* mandatory; a token-less `startmovie` writes no image files | No frames appear |
 | `JpgFormatToken` | `jpg` | *(observed)* works; engine default quality is 50 | `startmovie` is rejected; no frames appear |
 | `AudioToken` | `wav` | *(observed)* works — writes `csgo/movie/<timestamp>/<name>.wav` at game-time length; without the token no wav is written | Blank: no clip ever gets audio |
+| `AudioOnlyTokens` | `wav nocodec` | *(observed)* `InEngineHooked` only: game-time wav, zero frame files | The engine dumps frames the hooked provider does not read, or records no wav |
 | `JpegQualityArgument` | `jpeg_quality` | *(observed)* argument on the startmovie line, not a cvar; the correct spelling is accepted (`quality 90` echoed back) despite the usage text's typo `jpeg_qality` | The engine ignores an unknown token and uses default quality (50) |
 | `FocusSleepRestoreValue` | `1` | Still unverified: the engine's own `engine_no_focus_sleep` default | The user's CS2 is left with a different throttle than it started with |
 | `AudioFileSearchPattern` | `{0}*.wav` | *(observed)* the wav is named exactly `<name>.wav`, which this matches | The wav is not found; the clip takes the `MissingAudioBehavior` path |
@@ -377,19 +382,17 @@ than a set of scattered settings so that correcting reality on a future build is
 - The render waits on the encoder. At a fixed timestep there is no frame to drop, so a slow encoder
   does not degrade the output, it extends the render. `Auto` falling back to `libx264` is therefore
   worth knowing about, which is why doctor warns about it.
-- `host_framerate` and demo timescale both change how game time advances. They have not been tested
-  together on this provider.
+- `demo_timescale` has no effect on game time under `host_framerate` (see *Capture speed*). Use
+  `playbackSpeed` for slow motion or fast-forward.
 
 ## Unverified against real CS2
 
-Still open after the 2026-07-30 session against build 2000879: the engine's own
-`engine_no_focus_sleep` default (it is what gets restored), and whether the tick-96 command clamp
-still applies to current builds. `csvg doctor` reports the same list at runtime, and each item has
+Not yet confirmed on build 2000879: the engine's own `engine_no_focus_sleep` default (it is what
+gets restored), and whether the tick-96 command clamp still applies to current builds. `csvg doctor` reports the same list at runtime, and each item has
 an "unverified" comment at its definition.
 
-Mock-mode support for `startmovie` is deliberately **not** implemented yet. A mock written before the
-facts are known would be built to match these assumptions, and a green mock end-to-end test would
-prove self-consistency rather than fidelity to CS2.
+Mock mode deliberately does **not** simulate `startmovie`. A mock built to match these assumptions
+would make a green mock end-to-end test prove self-consistency rather than fidelity to CS2.
 
 ## See also
 

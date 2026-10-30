@@ -93,13 +93,14 @@ sequenceDiagram
 
     Consumer->>Session: CaptureClipAsync(ClipCaptureContext)
     activate Session
-    Session->>Plugin: SetDemoOptions / SetSpectatorTarget (when the clip carries them)
 
     Session->>Coord: CaptureClipAsync(engineSession, captureSession, clip)
     activate Coord
+    Coord->>Plugin: SetDemoOptions / SetSpectatorTarget (when the clip carries them)
     Coord->>Capture: BeginClipAsync(clip)
     activate Capture
     Coord->>Plugin: ScheduleCommandsAtTick(batch) for each TickPlan batch
+    Coord->>Plugin: ExecuteConsoleCommands(TickPlan setup commands)
     Coord->>Plugin: ScheduleCommandsAtTick(startTick-1, spec_player) when a target is set
     Coord->>Capture: OnPlaybackStartingAsync()
     Capture-->>Coord: Recording started
@@ -164,9 +165,8 @@ sequenceDiagram
             Runner->>Session: clip started
             Session->>Consumer: CompilationClipStarted event
 
-            Runner->>Plugin: SetDemoOptions(clip.Options)
-            Runner->>Plugin: SetSpectatorTarget(clip.PlayerName)
             Runner->>Coord: CaptureClipAsync(clip plan)
+            Coord->>Plugin: SetDemoOptions / SetSpectatorTarget
             Coord->>Capture: BeginClipAsync + OnPlaybackStartingAsync
             Coord->>Plugin: PlayDemoTickRange(start, end)
 
@@ -222,6 +222,10 @@ sequenceDiagram
         Server->>Plugin: CsControlRequest.SetSpectatorTarget
         Server->>Plugin: CsControlRequest.SetDemoOptions
         Server->>Plugin: CsControlRequest.SetTickUpdateFrequency
+        Server->>Plugin: CsControlRequest.SetDemoTimescale / QueryDemoState
+        Server->>Plugin: CsControlRequest.ScheduleCommandsAtTick / ClearScheduledCommands
+        Server->>Plugin: CsControlRequest.ExecuteConsoleCommands
+        Server->>Plugin: CsControlRequest.SetGameEventSubscription
     end
 
     rect rgb(220, 240, 200)
@@ -229,6 +233,8 @@ sequenceDiagram
         Plugin->>Server: CsProcessEvent.TickUpdate
         Plugin->>Server: CsProcessEvent.DemoPlaybackStatusChange
         Plugin->>Server: CsProcessEvent.Cs2ProcessStatus
+        Plugin->>Server: CsProcessEvent.DemoState / CommandAck
+        Plugin->>Server: CsProcessEvent.GameEventTelemetry
     end
 
     Plugin->>Server: Stream closes (CS2 exit)
@@ -237,7 +243,9 @@ sequenceDiagram
 
 ## Playback-Only Session (No Recording)
 
-`WatchTask` uses this path.
+`StartWatchAsync` is the playback-only bootstrap for hosts that mirror playback without
+recording. `csvg watch` (`WatchTask`) records by default, so it calls `StartAsync` and skips
+capture bring-up only with `--no-capture`.
 
 ```mermaid
 sequenceDiagram

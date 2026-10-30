@@ -1,4 +1,4 @@
-# Cross-Compilation Build Guide
+# Building the Plugin
 
 ## Table of Contents
 
@@ -7,23 +7,26 @@
 - [Prerequisites](#prerequisites)
 - [Platform-Specific Setup](#platform-specific-setup)
 - [Building](#building)
+- [Verifying Builds](#verifying-builds)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-Two targets, and they don't have the same reach. mock_server builds for everything: Windows, Linux, macOS, x64 and ARM64. server_plugin builds only for Windows x64 and Linux x64 — the platforms CS2 supports.
+Two targets, and they don't have the same reach. mock_server builds for win-x64, linux-x64, linux-arm64 and osx-arm64. server_plugin builds only for Windows x64 and Linux x64 — the platforms CS2 supports.
 
 ### Key Technologies
 
-CMake 3.20+ drives the build and carries the presets, vcpkg supplies gRPC and protobuf, and Clang/LLVM is the primary compiler for cross-compilation. Ninja is the recommended generator.
+CMake 3.25+ drives the build and carries the presets, vcpkg supplies gRPC and protobuf, and Clang/LLVM is the primary compiler for cross-compilation. Native Windows builds use the Visual Studio 2022 generator; every other preset uses Ninja.
 
 ## Build Matrix
+
+Rows are build hosts, columns are targets.
 
 ### mock_server
 
 |               | win-x64 | linux-x64 | linux-arm64 | osx-arm64 |
 | ------------- | ------- | --------- | ----------- | --------- |
-| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | not supported | not supported | not supported |
 | **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) | untested ([gcc-aarch64](#for-linux-arm64-cross-compilation)) | untested ([osxcross](#for-macos-cross-compilation-from-linux)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) | works (native) |
 
@@ -33,7 +36,7 @@ Built only when the target is win-x64 or linux-x64, since CS2 only officially su
 
 |               | win-x64 | linux-x64 |
 | ------------- | ------- | --------- |
-| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | untested ([Clang + xwin](#for-windows-cross-compilation-from-linux)) |
+| **win-x64**   | works ([MSVC](#for-native-windows-builds)) | not supported |
 | **linux-x64** | works ([Clang + xwin](#for-windows-cross-compilation-from-linux)) | works ([GCC](#for-native-linux-builds)) |
 | **osx-arm64** | works ([clang-cl + xwin](#for-windows-cross-compilation-from-macos)) | works ([GCC cross-toolchain](#for-linux-cross-compilation-from-macos)) ¹ |
 
@@ -41,21 +44,24 @@ Built only when the target is win-x64 or linux-x64, since CS2 only officially su
 
 ### Legend
 
-**works** means the build succeeded and the artifact was verified. **untested** means nobody has run it. Either way, the toolchain in parentheses links to its setup instructions. A failed build says broken; one blocked by a missing dependency says blocked, with a note.
+**works** means the build succeeded and the artifact was verified. **untested** means nobody has run it. Either way, the toolchain in parentheses links to its setup instructions. **not supported** means there is no toolchain setup for that host: the cross toolchain files expect GCC cross-compilers or osxcross, and the `cross-windows-x64` preset is hidden on Windows hosts.
+
+CI covers two of these cells on every push and pull request: linux-x64 → linux-x64 (`release-unix`) and linux-x64 → win-x64 (`cross-windows-x64`), both in `.github/workflows/build-native-plugins.yml` on `ubuntu-latest`. Releases ship those builds. `.github/workflows/native-windows.yml` covers win-x64 → win-x64 (`release`) on a narrower schedule, described [below](#for-native-windows-builds). The osx-arm64 mock_server is built by hand on an Apple Silicon Mac with `scripts/refresh-macos-mock.sh` and committed under `prebuilt/osx-arm64/`.
 
 ## Prerequisites
 
 ### All Platforms
 
-1. **CMake 3.20+**
+1. **CMake 3.25+** (`CMakePresets.json` uses preset schema version 6)
    ```bash
-   cmake --version  # Should be 3.20 or higher
+   cmake --version  # Should be 3.25 or higher
    ```
 
-2. **vcpkg** (included as a git submodule)
+2. **vcpkg** (included as a git submodule, alongside the HL2SDK)
    ```bash
-   # Initialize the submodule (from the repo root)
-   git submodule update --init
+   # Initialize the submodules
+   cd plugin/Cs2VideoGenerator.Plugin.Grpc
+   git submodule update --init --recursive
 
    # Bootstrap vcpkg (first time only)
    # On Linux/macOS:
@@ -65,7 +71,7 @@ Built only when the target is win-x64 or linux-x64, since CS2 only officially su
    .\external\vcpkg\bootstrap-vcpkg.bat
    ```
 
-3. **Ninja** (recommended for cross-compilation)
+3. **Ninja** (used by the Unix and cross-compilation presets)
    ```bash
    # Ubuntu/Debian
    sudo apt install ninja-build
@@ -186,7 +192,7 @@ This one needs osxcross.
 
 On a Windows host, CMakeLists.txt builds vcpkg ports under `<repo>/.vcpkg-bt` rather than `external/vcpkg/buildtrees`. gRPC's generated sources sit 181 characters below the buildtrees root, and `cl.exe` can't open paths past `MAX_PATH` (260) even with `LongPathsEnabled` set, so the default root limits the clone path to about 15 characters while `.vcpkg-bt` allows about 68. The option is appended to any `-DVCPKG_INSTALL_OPTIONS` you pass, unless you give your own `--x-buildtrees-root`. See [troubleshooting](#8-cannot-open-source-file-under-vcpkg-bt-or-buildtrees-windows).
 
-Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on pushes to `main` that touch the plugin, weekly, and on manual dispatch (not on pull requests), but releases still ship the clang-cl cross-build.
+Native MSVC builds map the repo root to `/csvg` in `__FILE__` strings through `/pathmap:`, which needs `/experimental:deterministic` alongside it (both come from `cmake/path-privacy.cmake`). The `native-windows.yml` workflow builds this preset and runs the path check on pushes to `main` and `v*/**` branches that touch the plugin, weekly, and on manual dispatch (not on pull requests), but releases still ship the clang-cl cross-build.
 
 ### macOS (Build Host)
 
@@ -249,12 +255,9 @@ Same xwin approach as on Linux.
    ```bash
    brew install llvm
    
-   # Add LLVM to PATH
-   echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc
-   source ~/.zshrc
-   
-   # Or for Intel Macs:
-   echo 'export PATH="/usr/local/opt/llvm/bin:$PATH"' >> ~/.zshrc
+   # Add LLVM to PATH (Homebrew's llvm is keg-only; the OpenSSL port
+   # build needs its clang, llvm-ar and llvm-ranlib)
+   echo 'export PATH="$(brew --prefix llvm)/bin:$PATH"' >> ~/.zshrc
    source ~/.zshrc
    ```
 
@@ -283,7 +286,7 @@ cmake --preset cross-windows-x64
 cmake --build --preset cross-windows-x64 --parallel
 ```
 
-The binaries come out MSVC ABI-compatible, so they work with CS2 on Windows.
+The binaries come out MSVC ABI-compatible, so they work with CS2 on Windows. vcpkg's stock OpenSSL port needs nmake and other native Windows tools; the overlay port in `cmake/ports/openssl` builds it with clang and GNU make instead when the host isn't Windows.
 
 ## Building
 
@@ -323,7 +326,7 @@ cmake --build --preset cross-linux-x64 --parallel
 
 ### Build Artifacts
 
-Artifacts land in a directory named after the CMake build type, not the preset name. That's `Release` for all release and cross presets, `Debug` for the debug presets:
+Artifacts land under the repository root, in a directory named after the CMake build type, not the preset name. That's `Release` for all release and cross presets, `Debug` for the debug presets:
 
 ```
 artifacts/
@@ -396,10 +399,10 @@ cmake --preset cross-linux-arm64
 cmake --build --preset cross-linux-arm64 --parallel
 ```
 
-### Example: Build All Targets from M-Series Mac
+### Example: Build All Targets from an Apple Silicon Mac
 
 ```bash
-# From an M-series MacBook (macOS ARM64), you can build for all platforms:
+# From an Apple Silicon Mac (macOS ARM64), you can build for all four targets:
 
 export XWIN_DIR=~/.xwin
 
@@ -415,6 +418,29 @@ cmake --preset cross-linux-arm64 && cmake --build --preset cross-linux-arm64 --p
 # Cross to Windows x64 (requires xwin setup)
 cmake --preset cross-windows-x64 && cmake --build --preset cross-windows-x64 --parallel
 ```
+
+## Verifying Builds
+
+`scripts/test-cross-compilation.sh` configures and builds every preset `cmake --list-presets` shows on the current host, then checks each `mock_server` with `file`. Presets whose host condition isn't met are reported as skipped.
+
+```bash
+cd plugin/Cs2VideoGenerator.Plugin.Grpc
+./scripts/test-cross-compilation.sh                    # configure + build + verify
+TEST_BUILD=false ./scripts/test-cross-compilation.sh   # configure only
+```
+
+Logs go to `../../artifacts/test/<preset>.configure.log` and `<preset>.build.log`, with a summary in `../../artifacts/test/test-results.txt`. The script exits non-zero if any preset fails.
+
+To check a binary by hand, `file` should report:
+
+| Target | `file` output contains |
+| ------ | ---------------------- |
+| linux-x64 | `ELF 64-bit LSB ... x86-64` |
+| linux-arm64 | `ELF 64-bit LSB ... ARM aarch64` |
+| win-x64 | `PE32+ executable ... x86-64` |
+| osx-arm64 | `Mach-O 64-bit executable arm64` |
+
+`scripts/validate-environment.sh` checks for the tools each target needs before you start.
 
 ## Troubleshooting
 
@@ -447,7 +473,7 @@ export XWIN_DIR=~/.xwin
 
 #### 3. Clang/LLVM not found
 
-**Error**: `clang not found. Windows cross-compilation may fail.`
+**Error**: `clang-cl not found. Windows cross-compilation may fail.`
 
 **Solution**:
 ```bash
@@ -456,7 +482,7 @@ sudo apt install clang llvm lld
 
 # macOS
 brew install llvm
-export PATH="/usr/local/opt/llvm/bin:$PATH"
+export PATH="$(brew --prefix llvm)/bin:$PATH"
 
 # Windows
 choco install llvm
@@ -529,15 +555,17 @@ A root outside both the repo and your user profile isn't covered by any `/pathma
 
 ### Getting Help
 
-1. Check the vcpkg install log:
+Paths below are relative to the plugin directory.
+
+1. Check the vcpkg install log, and the per-port logs it points to:
    ```
-   artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/<preset>/vcpkg-manifest-install.log
+   ../../artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/<preset>/vcpkg-manifest-install.log
    ```
 
 2. Clean build and try again:
    ```bash
-   rm -rf artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/<preset>
-   cmake --preset <preset-name>
+   rm -rf ../../artifacts/cmake/Cs2VideoGenerator.Plugin.GRPC/<preset>
+   cmake --preset <preset>
    ```
 
 3. Verify your toolchain setup:
@@ -549,7 +577,7 @@ A root outside both the repo and your user profile isn't covered by any `/pathma
 
 ### Custom Toolchains
 
-Custom toolchain files go in `cmake/toolchains/` and get referenced from CMakePresets.json. For a custom Clang configuration:
+Custom toolchain files go in `cmake/toolchains/` and get referenced from a preset's `VCPKG_CHAINLOAD_TOOLCHAIN_FILE` in CMakePresets.json. A chainloaded toolchain replaces vcpkg's own per-platform toolchain, so it has to set anything that one would have (`-fPIC` on Linux, the path-privacy flags from `cmake/path-privacy.cmake`); the existing files show how. For a custom Clang configuration:
 ```cmake
 # cmake/toolchains/custom-clang.cmake
 set(CMAKE_C_COMPILER clang-15)
@@ -563,7 +591,7 @@ Custom triplets are in `cmake/triplets/`. Modify those or add your own.
 
 ### CI/CD Integration
 
-See `.github/workflows/ci.yml`.
+`.github/workflows/build-native-plugins.yml` is the shared build: `ci.yml` calls it on every push and pull request, `release.yml` on version tags. `.github/workflows/native-windows.yml` runs the native MSVC build. See [Legend](#legend) for which build matrix cells each one covers.
 
 ## References
 

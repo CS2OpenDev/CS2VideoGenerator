@@ -13,22 +13,23 @@ Publishing uses **NuGet.org Trusted Publishing** (OIDC): the workflow's `id-toke
 for a short-lived push key via the `NuGet/login` action, so there is no nuget.org API key or
 repository secret to store. One-time setup: on NuGet.org (account `sid2934`) add a Trusted
 Publishing policy bound to repository `CS2OpenDev/CS2VideoGenerator` and workflow file
-`release.yml`. On the first successful push the (currently unclaimed) package IDs are created
-under that account.
+`release.yml`. Both package IDs (`Cs2VideoGenerator.Core`, `Cs2VideoGenerator.Cli`) are owned
+by that account.
 
 ## Versioning model
 
 Versions come from [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning)
-(`version.json` at the repo root). On `main`, `version.json` carries a prerelease version (e.g.
-`1.0.2-alpha.{height}`). Every main build therefore produces a unique prerelease package that
-can never collide with a published release.
+(`version.json` at the repo root). `version.json` carries a plain `X.Y.Z` with no prerelease
+suffix, and both `main` and `v*` tags are public-release refs (`publicReleaseRefSpec`), so builds
+of either stamp that version exactly. Between releases, `main` keeps the version of the most
+recent release; CI's packages from `main` therefore share its number, but they are only workflow
+artifacts and are never pushed anywhere.
 
-> **Important caveat:** pushing a `v*` tag does **not** by itself produce a clean `X.Y.Z`
-> package. NBGV computes the version from the **tagged commit's** `version.json`; the tag only
-> marks the ref as a public release (dropping the `-gXXXX` git suffix). If the tagged commit's
-> `version.json` still says `1.0.1-alpha.{height}`, a `v1.0.1` tag yields `1.0.1-alpha.N`
-> packages. The release workflow guards this: it fails if the computed package version does not
-> equal the tag's version.
+> **Important caveat:** pushing a `v*` tag does **not** set the version. NBGV computes it from
+> the **tagged commit's** `version.json`; the tag only marks the ref as a public release. If the
+> tagged commit's `version.json` still names the previous release, or carries a prerelease
+> suffix, the packages get that version instead of the tag's. The release workflow guards this:
+> it fails if the computed package version does not equal the tag's version.
 
 ## Release steps
 
@@ -36,23 +37,15 @@ can never collide with a published release.
    `## [X.Y.Z] - YYYY-MM-DD`, and add the compare/tag link at the bottom. The workflow
    extracts exactly this section as the GitHub Release body.
 
-2. **Set the release version.** Run the NBGV release flow from the repo root:
+2. **Set the release version.** Edit `version.json` to `"version": "X.Y.Z"`. Commit it together
+   with the changelog rename (`release: prepare X.Y.Z`).
 
-   ```bash
-   nbgv prepare-release   # dotnet tool install -g nbgv
-   ```
-
-   That creates a release branch whose `version.json` is set to the clean `X.Y.Z` and bumps
-   `main` to the next `-alpha` prerelease. (Manual alternative: edit `version.json` to
-   `"version": "X.Y.Z"` in a PR targeting the release ref, and in a follow-up bump `main` to
-   `X.Y.(Z+1)-alpha.{height}`.)
-
-3. **Merge and verify.** Land the release-version commit, changelog rename included, and
-   confirm CI is green on it. Then check the version locally:
+3. **Merge and verify.** Land the release-version commit on `main` and confirm CI is green on
+   it. Then check the version locally:
 
    ```bash
    git checkout <release-commit>
-   nbgv get-version -v NuGetPackageVersion   # must print X.Y.Z exactly
+   nbgv get-version -v NuGetPackageVersion   # dotnet tool install -g nbgv; must print X.Y.Z exactly
    ```
 
 4. **Tag the prepared commit and push:**
@@ -69,7 +62,7 @@ can never collide with a published release.
 
    The last step before anything is published scans every packed artifact for absolute build
    paths and fails the release if it finds one — so a package can never ship the build
-   machine's directory layout again. See `docs/build-path-privacy.md`.
+   machine's directory layout. See `docs/build-path-privacy.md`.
 
 5. **Check the results:** the GitHub Release (nupkg/snupkg + CLI archives attached, changelog
    body) and the published package versions on
@@ -84,8 +77,7 @@ NuGet.org push and the GitHub Release.
 
 Off-tag dry runs from a branch that is **not** a public-release ref produce prerelease-suffixed
 versions, and warn that no matching CHANGELOG section exists — both expected. Dispatching from
-`main` stamps a clean `X.Y.Z` when `version.json` carries a release version, since `main` is a
-public-release ref.
+`main` stamps the clean `X.Y.Z` in `version.json`, since `main` is a public-release ref.
 
 ## What ships where
 
@@ -131,8 +123,8 @@ rather than silently shipping a macOS package without its mock.
 
 **Refresh it whenever the mock engine or its wire protocol changes** (otherwise the committed
 binary drifts from the current `.proto`/mock sources). Nothing warns you when it has drifted:
-the test suite runs the freshly built mock rather than this one. It was last refreshed for
-1.1.2, against the 2.0 wire protocol.
+the test suite runs the freshly built mock rather than this one. It was last refreshed before
+0.9.0; the `.proto` and the mock sources have not changed since.
 
 On an Apple Silicon Mac, run
 `plugin/Cs2VideoGenerator.Plugin.Grpc/scripts/refresh-macos-mock.sh`, then commit the updated
@@ -144,8 +136,8 @@ and stages it to the tracked path.
 
 CI cannot do this for you. Its only contact with the committed binary is the `path-privacy`
 strings scan and the existence check in `setup-native-assets` — together those prove the binary
-leaks no build paths and is a file, not that it can answer the current protocol. That is how
-1.1.0 shipped green with a mock that could not.
+leaks no build paths and is a file, not that it can answer the current protocol. A stale mock
+passes both.
 
 Point the mock end-to-end tests at the **committed** binary rather than the one the build just
 produced:
@@ -157,16 +149,15 @@ CSVG_MOCK_SERVER_PATH="$PWD/plugin/Cs2VideoGenerator.Plugin.Grpc/prebuilt/osx-ar
 ```
 
 These are the only tests that exercise the committed artifact, and they are sensitive to
-protocol drift: run against the 1.1.0 binary they fail 2 of 3, and against the 1.1.1 refresh
-they pass 3 of 3. A green run here is what backs the claim that the shipped macOS mock speaks
-the current wire format.
+protocol drift: a binary built before a protocol change fails them. A green run here is what
+backs the claim that the shipped macOS mock speaks the current wire format.
 
 ### Why shipping a locally-built binary is safe
 
 A binary built on a developer's machine can carry that machine's filesystem layout. Compilers
 expand `__FILE__` into string literals, so an unmapped build embeds the absolute path of every
-source file it compiled. The shipped 1.0.0 macOS mock contained 404 of them. Three things
-prevent a repeat, and none depend on the person running the refresh:
+source file it compiled; an unmapped macOS build of the mock carries several hundred. Three
+things prevent that, and none depend on the person running the refresh:
 
 1. `cmake/path-privacy.cmake` maps those paths away at compile time, for our own sources
    and for every vcpkg dependency, so a correct build has nothing to leak.
