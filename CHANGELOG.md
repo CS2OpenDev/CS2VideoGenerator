@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `csvg_console.log` next to `cs2.exe`. It was left over from debugging and reopened the file once
   per line. `csvg.log` is unchanged.
 
-## [0.10.0] - 2026-10-20
+## [0.10.0] - 2026-10-21
 
 ### Fixed
 
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The triplets add `path-privacy.cmake` to vcpkg's ABI hash, so changing the path maps
   rebuilds the ports instead of reusing archives built with the old flags.
 
-## [0.9.0] - 2026-08-18
+## [0.9.0] - 2026-08-19
 
 Initial public release.
 
