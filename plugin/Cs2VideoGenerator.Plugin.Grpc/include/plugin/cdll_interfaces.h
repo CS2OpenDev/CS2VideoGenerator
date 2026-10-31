@@ -28,8 +28,7 @@
 // so its slots are identical on Windows and Linux. IDemoFile is the concrete
 // CDemoPlayer with a virtual destructor, which under the Itanium ABI (Linux) takes an
 // extra vtable slot, shifting everything from the destructor down by +1 on Linux — so
-// IDemoFile carries a `#if !defined _WIN32` split. See docs/vtable-offsets-guide.md for
-// the full investigation method and the rationale behind each split.
+// IDemoFile carries a `#if !defined _WIN32` split.
 #include "interface.h"
 
 abstract_class IDemoFile
@@ -38,7 +37,7 @@ abstract_class IDemoFile
     // IDemoFile is the engine's concrete CDemoPlayer, which has a virtual destructor.
     // On the Itanium ABI (Linux) a virtual destructor occupies two adjacent vtable slots
     // (complete + deleting) vs one on MSVC (Windows), so every slot from the destructor
-    // down is shifted +1 on Linux. See docs/vtable-offsets-guide.md.
+    // down is shifted +1 on Linux.
     virtual void _Unknown_000(void) {} // ~CDemoPlayer complete dtor (slot 0 on both)
 #if !defined _WIN32
     virtual void _Unknown_LinuxDeletingDtor(void) {} // Itanium deleting dtor — Linux-only extra slot

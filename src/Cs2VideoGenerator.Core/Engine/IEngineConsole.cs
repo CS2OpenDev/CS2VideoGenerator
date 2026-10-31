@@ -12,7 +12,7 @@ public interface IEngineConsole
     /// <summary>
     ///     Capability tokens advertised by the connected plugin build (see
     ///     <see cref="CsvgCapabilities" />). Empty until the plugin's process-status handshake
-    ///     arrives and after the session ends. An empty set means "assume the v1.0 baseline
+    ///     arrives and after the session ends. An empty set means "assume the baseline
     ///     command set".
     /// </summary>
     IReadOnlySet<string> Capabilities { get; }

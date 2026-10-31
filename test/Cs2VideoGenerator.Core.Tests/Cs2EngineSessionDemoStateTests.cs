@@ -16,7 +16,7 @@ using Xunit;
 namespace Cs2VideoGenerator.Core.Tests;
 
 /// <summary>
-///     The v1.1 demo state surface: proto-to-record mapping (optional-field presence drives
+///     The demo state surface: proto-to-record mapping (optional-field presence drives
 ///     nullability, plus the origin enum), <see cref="Cs2EngineSession.DemoStateChanged" /> dispatch,
 ///     <see cref="Cs2EngineSession.LastDemoState" /> and
 ///     <see cref="Cs2EngineSession.LastKnownTimescale" /> tracking,
@@ -269,12 +269,12 @@ public class Cs2EngineSessionDemoStateTests
 
         try
         {
-            // v1.0-style tick update (no is_paused): LastTickIsPaused must stay null.
+            // Older-plugin tick update (no is_paused): LastTickIsPaused must stay null.
             reader.Write(new CsProcessEvent { TickUpdate = new TickUpdateEvent { CurrentTick = 100 } });
             await WaitUntilAsync(() => session.LastTick == 100);
             Assert.Null(session.LastTickIsPaused);
 
-            // v1.1 tick update carrying is_paused.
+            // Tick update carrying is_paused.
             reader.Write(new CsProcessEvent { TickUpdate = new TickUpdateEvent { CurrentTick = 101, IsPaused = true } });
             await WaitUntilAsync(() => session.LastTick == 101);
             Assert.True(session.LastTickIsPaused);

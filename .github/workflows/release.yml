@@ -84,7 +84,7 @@ jobs:
 
       # NBGV computes the version from the TAGGED COMMIT's version.json. Tagging alone
       # does not produce a clean X.Y.Z: if version.json still carries a prerelease
-      # suffix (e.g. 1.0.1-alpha.{height}), the package would be 1.0.1-alpha.N. Guard
+      # suffix (e.g. X.Y.Z-alpha.{height}), the package would be X.Y.Z-alpha.N. Guard
       # against tagging a commit that was not prepared per docs/RELEASING.md.
       - name: Resolve and validate version
         id: version

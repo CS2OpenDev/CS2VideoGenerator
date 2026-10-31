@@ -5,7 +5,7 @@ Thanks for your interest in contributing!
 ## Prerequisites
 
 - **.NET 10.0 SDK**. The exact version is in `global.json`.
-- For the native C++ plugin and mock server: CMake 3.20+, Ninja (recommended), and vcpkg. vcpkg is included as a submodule, so run `git submodule update --init` and bootstrap it.
+- For the native C++ plugin and mock server: CMake 3.25+, Ninja (recommended), and vcpkg. vcpkg and the HL2SDK are included as submodules, so run `git submodule update --init --recursive` and bootstrap vcpkg.
 
 ## Building and testing
 
@@ -46,4 +46,4 @@ CSVG is a **pure capture executor**: it captures what a compilation JSON tells i
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the project license, GPL-3.0-only (see [LICENSE](LICENSE)).
+By contributing, you agree that your contributions are licensed under the project license, MIT (see [LICENSE](LICENSE)).

@@ -5,7 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.0] - 2026-10-20
+## [Unreleased]
+
+## [0.10.1] - 2026-10-30
+
+### Changed
+
+- **License:** the project is now MIT-licensed (previously GPL-3.0-only). Releases up to and
+  including 0.10.0 remain available under GPL-3.0-only as published.
+- Added `THIRD-PARTY-NOTICES.md`, covering the Valve SDK code compiled into the plugin, the gRPC
+  dependency stack it statically links, and the NuGet dependencies the `csvg` tool bundles. Both
+  packages now include it.
+- README: added a quickstart, documented the `InEngineHooked` provider, `--game-events` and the
+  bundled configuration defaults, and removed references to versions that were never released.
+
+### Fixed
+
+- `csvg doctor` with `VideoCaptureProvider` set to `InEngineHooked` reported a failed "Unknown
+  provider" check. It now runs the in-engine checks for it, plus the Windows-only platform check and
+  the plugin's `present-capture` requirement, and leaves out the frame-file throughput row.
+
+### Removed
+
+- **Plugin:** the diagnostic console mirror that copied every engine console line into
+  `csvg_console.log` next to `cs2.exe`. It was left over from debugging and reopened the file once
+  per line. `csvg.log` is unchanged.
+
+## [0.10.0] - 2026-10-21
 
 ### Fixed
 
@@ -37,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The triplets add `path-privacy.cmake` to vcpkg's ABI hash, so changing the path maps
   rebuilds the ports instead of reusing archives built with the old flags.
 
-## [0.9.0] - 2026-08-18
+## [0.9.0] - 2026-08-19
 
 Initial public release.
 
@@ -55,14 +81,15 @@ compilation JSON.
   slow-motion and normalized copies), `doctor` (diagnose Steam/CS2/OBS discovery, plugin
   config, versions, and the bundled plugin's SHA-256), and `backup` / `restore` /
   `cleanup` for the game files CSVG modifies.
-- **Core library (`Cs2VideoGenerator.Core`)** — the `ICsvgClient` orchestration API: CS2
+- **Core library (`Cs2VideoGenerator.Core`)** — the `CsvgVideoSession` orchestration API: CS2
   session lifecycle, demo control (load/play/pause/seek/tick ranges), spectator targeting,
   synchronized capture, and batch compilation capture.
 - **Two capture backends** — an in-engine (`startmovie`) offline path where every output
   frame is a real rendered frame (the default), and an OBS Studio provider built on
   [Obs.NET](https://www.nuget.org/packages/Obs.NET) (obs-websocket v5) with automatic
   launch/shutdown, profile/scene-collection selection, a readiness gate, and a per-clip
-  audio-capture toggle.
+  audio-capture toggle. An experimental, Windows-only variant of the in-engine path
+  (`InEngineHooked`) takes frames from the plugin's present hook instead of image files.
 - **Offline speed & normalization** — per-clip `playbackSpeed` (real slow-motion /
   fast-forward frames, e.g. 0.5 = 2× slow motion) and `produceNormalizedCopy` in the
   compilation JSON, plus `watch --speed <x> [--normalize]`. `Capture:InEngine:KeepEngineAudio`
@@ -92,5 +119,7 @@ compilation JSON.
   publishes them to **NuGet.org via Trusted Publishing** (OIDC — no stored API key), and
   creates the GitHub Release. See `docs/RELEASING.md`.
 
+[Unreleased]: https://github.com/CS2OpenDev/CS2VideoGenerator/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/CS2OpenDev/CS2VideoGenerator/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/CS2OpenDev/CS2VideoGenerator/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/CS2OpenDev/CS2VideoGenerator/releases/tag/v0.9.0

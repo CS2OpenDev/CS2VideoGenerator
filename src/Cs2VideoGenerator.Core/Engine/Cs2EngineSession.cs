@@ -92,7 +92,7 @@ public sealed partial class Cs2EngineSession : ICs2EngineSession, ICs2EngineWire
     private readonly TaskCompletionSource<ProcessExitResult> _processExitedTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    // Latest engine-truth demo state / host-set timescale (v1.1 protocol additions).
+    // Latest engine-truth demo state / host-set timescale.
     private DemoState? _lastDemoState;
     private float? _lastKnownTimescale;
 
@@ -450,7 +450,7 @@ public sealed partial class Cs2EngineSession : ICs2EngineSession, ICs2EngineWire
             LastProcessStatus = status;
 
             // Latch the advertised capability tokens alongside the version fields:
-            // every process status re-latches, last write wins. An absent/empty list (v1.0 plugin)
+            // every process status re-latches, last write wins. An absent/empty list (older plugin)
             // latches the empty set - capability-gated APIs then degrade per their documentation.
             _pluginCapabilities = status.Capabilities.Count == 0
                 ? EmptyCapabilities
@@ -2120,7 +2120,7 @@ public sealed partial class Cs2EngineSession : ICs2EngineSession, ICs2EngineWire
         Message = "SyncEvent [{ActivityName}] condition result: success={Success}, error={Error}")]
     partial void LogSyncEventConditionResult(string activityName, bool? success, string? error);
 
-    // v1.1 capability release
+    // Command acknowledgements
     [LoggerMessage(EventId = 13, Level = LogLevel.Debug,
         Message = "Dropping CommandAck for unknown command id {CommandId} (session {SessionId})")]
     partial void LogUnknownCommandAck(string sessionId, ulong commandId);

@@ -259,7 +259,7 @@ void Cs2PluginClient::SendProcessStatus(cs2_video_generator::Cs2ProcessStatus_Pr
         process_status->set_game_version(gameVersion);
     }
 
-    // Capability tokens (v1.1): build-time constant list advertised in every process
+    // Capability tokens: build-time constant list advertised in every process
     // status so the orchestrator can degrade per-token - warn, never error, matching
     // the version-handshake philosophy above. The only known tokens deliberately not
     // advertised by this build are "spectate-by-steamid" (pending empirical

@@ -2,10 +2,10 @@ namespace Cs2VideoGenerator.Core;
 
 /// <summary>
 ///     Well-known capability tokens a CSVG plugin build can advertise via
-///     <c>Cs2ProcessStatus.capabilities</c> (v1.1). Use these constants instead of raw
+///     <c>Cs2ProcessStatus.capabilities</c>. Use these constants instead of raw
 ///     strings when calling <see cref="Engine.IEngineConsole.Supports" /> or inspecting
 ///     <see cref="Engine.ICs2EngineSession.PluginCapabilities" />. Older plugins omit the field entirely, which
-///     surfaces as an empty capability set: the orchestrator then assumes the v1.0 baseline command
+///     surfaces as an empty capability set: the orchestrator then assumes the baseline command
 ///     set.
 /// </summary>
 /// <remarks>
@@ -14,7 +14,7 @@ namespace Cs2VideoGenerator.Core;
 ///     with nothing to report stays null or empty
 ///     (<see cref="Engine.ICs2EngineSession.LastDemoState" />), and optional work driven from
 ///     configuration rather than from a call is skipped with a warning (the startup game-event
-///     subscription). An operation a caller explicitly asked for that has no v1.0 equivalent throws
+///     subscription). An operation a caller explicitly asked for that has no baseline equivalent throws
 ///     <see cref="NotSupportedException" /> naming the capability, because the alternative is
 ///     returning as though it had run. The plugin cannot do it, and pretending otherwise puts the
 ///     failure somewhere far away from its cause. Where a legacy path does exist the call takes it

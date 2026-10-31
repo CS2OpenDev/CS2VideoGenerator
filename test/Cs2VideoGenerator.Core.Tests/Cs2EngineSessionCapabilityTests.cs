@@ -15,9 +15,9 @@ using Xunit;
 namespace Cs2VideoGenerator.Core.Tests;
 
 /// <summary>
-///     The v1.1 capability handshake. <see cref="Cs2EngineSession.PluginCapabilities" />
+///     The capability handshake. <see cref="Cs2EngineSession.PluginCapabilities" />
 ///     latches from process-status events (last write wins) and resets on session end; the
-///     capability-gated APIs degrade to <see cref="NotSupportedException" /> against a v1.0
+///     capability-gated APIs degrade to <see cref="NotSupportedException" /> against a
 ///     capability-less plugin.
 /// </summary>
 public class Cs2EngineSessionCapabilityTests
@@ -50,7 +50,7 @@ public class Cs2EngineSessionCapabilityTests
 
     /// <summary>
     ///     Every process-status event re-latches the set: last write wins, including a later status
-    ///     that advertises nothing (which returns the session to the v1.0 baseline).
+    ///     that advertises nothing (which returns the session to the baseline).
     /// </summary>
     [Fact]
     public async Task ProcessStatus_Relatch_LastWriteWins()

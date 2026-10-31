@@ -105,9 +105,9 @@ On other platforms (e.g. linux-arm64), build the mock server locally, following 
 
 A usable mock server must implement the CSVG gRPC protocol: connect back to the orchestrator's `Cs2GameService` stream and report `Ready`, respond to demo commands, and so on. A process that merely starts and sleeps will never make the session Ready. The reference implementation is the bundled `mock_server`, source in `plugin/Cs2VideoGenerator.Plugin.Grpc/src/mock/`. To run a locally built or custom binary, pass it via `--mock-server-path` (or `Cs2VideoGenerator:ExternalMockServerPath`).
 
-## Mock Engine Behavior (v1.1)
+## Mock Engine Behavior
 
-The mock engine (`MockEngineInterface`, compiled into `mock_server`) simulates demo playback for the real, production `Cs2PluginClient` that mock_server links. The v1.1 capability release extends what it simulates.
+The mock engine (`MockEngineInterface`, compiled into `mock_server`) simulates demo playback for the real, production `Cs2PluginClient` that mock_server links.
 
 ### Playback speed (`demo_timescale`)
 
@@ -119,7 +119,7 @@ The engine parses `demo_timescale <v>`, sent by the host via `SetDemoTimescaleCo
 export CSVG_MOCK_DEMO_TICKS=6400   # demo ends naturally at tick 6400 (~100 s at 1x)
 ```
 
-When set to a positive integer N, the mock demo naturally ends when the tick counter reaches N: tick advancement stops and `IsPlayingDemo()` flips to false, exactly as a real demo ending does, so the client's polling loop emits its stop-transition `DemoStateEvent`. Unset (or invalid) = previous behavior: ticks advance forever.
+When set to a positive integer N, the mock demo naturally ends when the tick counter reaches N: tick advancement stops and `IsPlayingDemo()` flips to false, exactly as a real demo ending does, so the client's polling loop emits its stop-transition `DemoStateEvent`. Unset (or invalid), ticks advance forever.
 
 Notes:
 - The limit applies to every demo loaded in that process (each `playdemo` restarts from tick 0 and ends at N again).
@@ -128,11 +128,11 @@ Notes:
 
 ### Spectator target (`spec_player`)
 
-Production sends `spec_player "<display name>"`, a quoted display name rather than a slot number. The mock now parses the quoted-or-unquoted NAME and stores it as its current spectator target, readable via `MockEngineInterface::GetSpectatorTarget()` for tests. A purely numeric argument is still interpreted and logged as the legacy slot form. Previous versions did `atoi` on the argument and always logged slot 0 for named targets.
+Production sends `spec_player "<display name>"`, a quoted display name rather than a slot number. The mock parses the quoted-or-unquoted NAME and stores it as its current spectator target, readable via `MockEngineInterface::GetSpectatorTarget()` for tests. A purely numeric argument is interpreted and logged as the legacy slot form.
 
 ### Demo identity (`GetDemoFilePath`)
 
-The mock overrides the engine's `GetDemoFilePath()` slot to return the stored `playdemo` path, empty string when no demo has been loaded. The plugin's demo-identity capability needs nothing further from the mock.
+The mock overrides the engine's `GetDemoFilePath()` slot to return the stored `playdemo` path, empty string when no demo has been loaded. The plugin's `demo-identity` capability needs nothing further from the mock.
 
 ### Engine frame pump (`CSVG_MOCK_FRAME_HZ`)
 
@@ -181,12 +181,12 @@ To drive it, write lines to mock_server's stdin. From a .NET test harness that m
 
 Semantics and safety notes:
 
-- Nothing is replied on stdout. The `[MOCK INJECT]`/`[MOCK ENGINE]` lines are ordinary mock log output, same stream as today.
+- Nothing is replied on stdout. The `[MOCK INJECT]`/`[MOCK ENGINE]` lines are ordinary mock log output on the same stream.
 - Unknown lines are logged (`[MOCK INJECT] Unknown injection command`) and ignored; blank lines are skipped; CRLF line endings are tolerated.
 - EOF on stdin does not crash or exit the mock. Headless and test runners may close stdin; the reader thread just stops (logged) and the session continues.
 - The injection thread and the gRPC reader thread are serialized inside the mock engine (same command mutex), so interleaving injected and host commands is safe.
 
-Since the engine-pause-detection capability (this release), an injected `user-pause` **is** reflected in `TickUpdateEvent.is_paused`: the polling thread reads engine pause truth (`IDemoFile::IsDemoPaused`, which the mock overrides), force-sends a tick update carrying the new `is_paused`, and emits an `ORIGIN_USER` `DemoStateEvent` for the flip. The tick-stall inference — pause observable only as tick updates ceasing to advance — now applies only to pre-v1.1 plugins.
+An injected `user-pause` **is** reflected in `TickUpdateEvent.is_paused`: with the `engine-pause-detection` capability, the polling thread reads engine pause truth (`IDemoFile::IsDemoPaused`, which the mock overrides), force-sends a tick update carrying the new `is_paused`, and emits an `ORIGIN_USER` `DemoStateEvent` for the flip. The tick-stall inference — pause observable only as tick updates ceasing to advance — applies only to plugins that do not advertise `engine-pause-detection`.
 
 ## Telemetry
 

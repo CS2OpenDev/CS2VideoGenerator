@@ -14,12 +14,12 @@
     <Description>Core library for automating Counter-Strike 2 video generation from demo files. Provides CS2 process management, gRPC plugin communication, OBS Studio integration, and video capture orchestration.</Description>
     <Authors>Austin Gray</Authors>
     <PackageTags>cs2;counter-strike;demo;video;recording;obs;grpc;game-capture</PackageTags>
-    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</PackageProjectUrl>
     <RepositoryUrl>https://github.com/CS2OpenDev/CS2VideoGenerator</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Copyright>Copyright (c) Austin Gray</Copyright>
+    <Copyright>Copyright (c) CS2OpenDev</Copyright>
     <!-- Symbols + SourceLink for debuggable packages -->
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
@@ -32,6 +32,7 @@
        (PackageReadmeFile names the file; a packed None supplies it.) -->
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

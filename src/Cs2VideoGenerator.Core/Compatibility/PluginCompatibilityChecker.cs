@@ -97,7 +97,7 @@ public sealed class PluginCompatibilityChecker(PluginCompatibilityData data)
 
     /// <summary>
     ///     Matches a version against a range expression: <see langword="null" />/empty matches everything,
-    ///     "1.0.1" matches exactly, "1.0.*" matches any version with that prefix.
+    ///     "0.10.0" matches exactly, "0.10.*" matches any version with that prefix.
     ///     An unknown version only matches the match-everything range.
     /// </summary>
     internal static bool VersionMatchesRange(string? version, string? range)

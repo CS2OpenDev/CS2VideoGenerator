@@ -20,7 +20,7 @@
  * PresentHookFrameConsumer): one CFRS {width, height, dxgiFormat} stream header, then
  * per frame CFRM {sequence, payloadBytes, 0} + payload, then CFRE {frameCount, 0, 0}.
  *
- * Boundary semantics (measured, Gate 4 spike): presents map 1:1 onto movie frames, and
+ * Boundary semantics (measured against real CS2): presents map 1:1 onto movie frames, and
  * exactly one present occurs between the startmovie command executing and the first
  * movie frame - so the first armed present is skipped. The trailing movie frame's
  * present lands after endmovie executes and is not captured; the stream is one frame
@@ -354,7 +354,7 @@ bool CsvgPresentCaptureSupported()
  * @brief Installs the DXGI Present/Present1 vtable hook, once. Called every engine frame
  *        from the FrameStageNotify hook; one relaxed load after the first call.
  *
- * Technique (validated by the Gate 4 spike): a throwaway D3D11 device + swapchain against
+ * Technique (validated against real CS2): a throwaway D3D11 device + swapchain against
  * a hidden window shares dxgi.dll's swapchain vtable with the game's real swapchain, so
  * patching Present and Present1 there hooks the game. Coexists with the Steam overlay's
  * own Present hook (observed). Install failure is latched and logged - capture arms will

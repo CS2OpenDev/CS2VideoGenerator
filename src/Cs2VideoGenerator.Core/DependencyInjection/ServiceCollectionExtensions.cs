@@ -194,7 +194,7 @@ public static class ServiceCollectionExtensions
                 : sp.GetRequiredService<Cs2ProcessManager>();
         });
 
-        // Mock user-action injection channel (v1.1): backed by the mock process manager when
+        // Mock user-action injection channel: backed by the mock process manager when
         // mock mode is effective, otherwise a no-op stub whose IsAvailable is false, because a real
         // CS2 instance has no injection channel. Branch on the bound options, mirroring the
         // ICs2ProcessManager factory above, rather than resolving ICs2ProcessManager and as-casting

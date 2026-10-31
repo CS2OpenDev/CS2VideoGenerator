@@ -108,7 +108,7 @@ internal static class SessionHarness
 
     /// <summary>
     ///     Wires a session id and a recording command sender only - no process status, so the
-    ///     capability set stays empty (the v1.0 plugin shape).
+    ///     capability set stays empty (the capability-less plugin shape).
     /// </summary>
     internal static async Task<List<CsControlRequest>> ConnectSenderAsync(
         this Cs2EngineSession session, string sessionId)

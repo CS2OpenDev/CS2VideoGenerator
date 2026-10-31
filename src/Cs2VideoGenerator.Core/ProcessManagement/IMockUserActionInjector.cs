@@ -36,7 +36,7 @@ public interface IMockUserActionInjector
 
 /// <summary>
 ///     The mock_server user-action injection grammar (one command per line), as
-///     implemented by the v1.1 mock. Use these helpers instead of raw strings.
+///     implemented by the mock. Use these helpers instead of raw strings.
 /// </summary>
 public static class MockUserActions
 {

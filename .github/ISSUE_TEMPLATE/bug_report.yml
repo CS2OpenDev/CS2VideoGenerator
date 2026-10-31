@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in csvg or Cs2VideoGenerator.Core does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command line, and the compilation JSON if you used `csvg generate` (trim it to the smallest one that still fails).
+      render: shell
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`csvg doctor --verbose` output"
+      description: Remove anything you consider private (paths include your user name).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Console output from the failing run, and `csvg.log` (next to `cs2.exe`) if the plugin was involved.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: CSVG version
+      placeholder: "0.10.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Windows, Linux]
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Capture provider
+      options: [InEngine, InEngineHooked, OBS, Not capture-related]

@@ -215,7 +215,7 @@ public class MockModeEndToEndTests
                 Assert.Empty(gameEvents);
             }
 
-            // since v1.1 the shared plugin client validates the demo file exists before issuing
+            // the shared plugin client validates the demo file exists before issuing
             // playdemo ("load-failure-detection"), so the path has to be a real file. Its contents
             // are irrelevant; the mock engine never opens it.
             string tempDemoPath = Path.Combine(Path.GetTempPath(), $"csvg-smoke-{Guid.NewGuid():N}.dem");
